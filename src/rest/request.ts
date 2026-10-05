@@ -5,6 +5,8 @@ import type { RequestOptions } from '../requests/schema.js';
 import type { AuthProvider } from '../auth/types.js';
 import { send } from './client.js';
 import { classifyError, classifyStatus } from '../diagnostics/errors.js';
+import { Redactor } from '../logging/redactor.js';
+import { responseDiagnostics, type ResponseBodyDiagnostic } from '../diagnostics/response.js';
 import { correlation } from '../diagnostics/correlation.js';
 
 export function resolveRequest(config: AppConfig, profile: Profile, template: RequestOptions = {}, cli: RequestOptions = {}) {
@@ -36,15 +38,23 @@ export interface RequestResult {
   errorType?: string;
   networkErrorCode?: string;
   oauth2?: OAuth2Diagnostics;
+  responseBody?: ResponseBodyDiagnostic;
+  responseHeaders?: Record<string, string | string[]>;
+  responseBodyReadFailed?: boolean;
+  responseDiagnosticsFailed?: boolean;
 }
-export async function executeRequest(auth: AuthProvider, request: ReturnType<typeof resolveRequest>, signal?: AbortSignal, expected?: number[]): Promise<RequestResult> {
+export async function executeRequest(auth: AuthProvider, request: ReturnType<typeof resolveRequest>, signal?: AbortSignal, expected?: number[], redactor = new Redactor()): Promise<RequestResult> {
   const started = performance.now();
   try {
     const prepared = await auth.prepareRequest({ timeoutMs: request.timeoutMs, signal });
-    const response = await send(request.url, request.method, { ...request.headers, ...prepared.headers }, request.body, request.timeoutMs, prepared.tls, signal);
+    const response = await send(request.url, request.method, { ...request.headers, ...prepared.headers }, request.body, request.timeoutMs, prepared.tls, signal, request.diagnosticBodyMaxBytes);
     const errorType = classifyStatus(response.status) ?? (expected && !expected.includes(response.status) ? 'UNEXPECTED_STATUS' : undefined);
-    // Only explicitly selected diagnostics are retained; payloads and arbitrary headers may contain customer data.
-    return { statusCode: response.status, durationMs: response.durationMs, ...correlation(response.headers), result: errorType ? 'failure' : 'success', errorType };
+    let diagnostics = {};
+    if (response.status >= 400 && response.status <= 599) {
+      try { diagnostics = responseDiagnostics(response, redactor) as object; }
+      catch { diagnostics = { responseDiagnosticsFailed: true }; }
+    }
+    return { statusCode: response.status, durationMs: response.durationMs, ...correlation(response.headers), ...diagnostics, result: errorType ? 'failure' : 'success', errorType };
   } catch (error) {
     const message = error instanceof Error ? error.message : '';
     return { durationMs: performance.now() - started, result: 'failure', errorType: message.startsWith('AUTH_ERROR') ? 'AUTH_ERROR' : message.startsWith('CONFIG_ERROR') ? 'CONFIG_ERROR' : classifyError(error), networkErrorCode: (error as NodeJS.ErrnoException).code, ...(error instanceof OAuth2AuthError && error.diagnostics ? { oauth2: error.diagnostics } : {}) };

@@ -7,6 +7,7 @@ An optional `config.yaml` supports:
 ```yaml
 rest:
   timeoutMs: 30000
+  diagnosticBodyMaxBytes: 65536
   headers:
     Accept: application/json
 poll:
@@ -18,3 +19,5 @@ Unknown fields are rejected. Priority is CLI arguments, template, profile, appli
 Request templates use `request.method`, `path`, `headers`, `body` or `bodyFile`, and `timeoutMs`. `poll` supports `intervalSeconds`, `count` or `duration`. Duration units are `ms`, `s`, `m`, `h`; fractional positive values are supported. `expect.status` specifies accepted success statuses; HTTP non-2xx remains a failure. Relative template body paths resolve beside the template; CLI body paths resolve from the working directory. `~` expansion is supported.
 
 Missing application config uses defaults; malformed/unreadable existing config fails. Profiles are named `<name>.yaml`, with names restricted to letters, numbers, `_` and `-`, starting with a letter/number. The file name must match the profile's name. Secrets come from the process environment, not automatically loaded `.env` files. Never store real payloads in tracked files.
+
+`rest.diagnosticBodyMaxBytes` controls HTTP 4xx/5xx body capture in bytes (default 65536, integer 0–1048576). It is an application setting, not a request/template override. See [REST diagnostics](diagnostics.md).

@@ -1,4 +1,4 @@
-const sensitive = /^(authorization|proxyauthorization|cookie|setcookie|clientsecret|clientid|accesstoken|refreshtoken|password|p12password|privatekey|certificate|certificatecontents|pfx|passphrase|secret|token|apikey|xapikey)$/i;
+const sensitive = /^(authorization|proxyauthorization|cookie|setcookie|clientsecret|clientid|accesstoken|refreshtoken|password|p12password|privatekey|certificate|certificatecontents|pfx|passphrase|secret|secrets|token|authenticationtoken|bearertoken|idtoken|apikey|xapikey)$/i;
 export class Redactor {
   private readonly secrets = new Set<string>();
   add(value: string) { if (value) this.secrets.add(value); }
@@ -16,8 +16,9 @@ export class Redactor {
     }
   }
   text(value: string): string {
-    let result = value.replace(/-----BEGIN [\s\S]*?-----END [^-]+-----/g, '[REDACTED]')
+    let result = value.replace(/-----BEGIN [\s\S]*?(?:-----END [^-]+-----|$)/g, '[REDACTED]')
       .replace(/\b(Bearer|Basic)\s+[^\s,;"']+/gi, '$1 [REDACTED]');
+    result = result.replace(/((?:["']?(?:authorization|proxy[-_]?authorization|cookie|set[-_]?cookie|client[-_]?secret|access[-_]?token|refresh[-_]?token|password|private[-_]?key|certificate(?:contents)?|p12[-_]?password|passphrase|client[-_]?id|secret|secrets|(?:authentication|bearer|id)[-_]?token|token|api[-_]?key)["']?)\s*[:=]\s*)(?:"(?:\\.|[^"\\])*(?:"|$)|'(?:\\.|[^'\\])*(?:'|$)|[^\r\n,;}]+)/gi, '$1[REDACTED]');
     for (const secret of [...this.secrets].sort((a,b) => b.length - a.length)) result = result.split(secret).join('[REDACTED]');
     return result;
   }

@@ -5,6 +5,6 @@ export const httpsUrl = z.string().refine(value => {
 }, 'Expected HTTPS URL without credentials or fragment');
 export const headersSchema = z.record(z.string(), z.string());
 export const configSchema = z.object({
-  rest: z.object({ timeoutMs: z.number().int().positive().default(30000), headers: headersSchema.default({}) }).strict().default({ timeoutMs: 30000, headers: {} }),
+  rest: z.object({ diagnosticBodyMaxBytes: z.number().int().min(0).max(1024 * 1024).default(64 * 1024), timeoutMs: z.number().int().positive().default(30000), headers: headersSchema.default({}) }).strict().default({ diagnosticBodyMaxBytes: 64 * 1024, timeoutMs: 30000, headers: {} }),
   poll: z.object({ intervalSeconds: z.number().positive().default(60) }).strict().default({ intervalSeconds: 60 })
 }).strict();
