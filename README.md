@@ -1,35 +1,76 @@
 # SAF CLI Tester
 
-Diagnose EcoHub SAF REST connectivity with a TechUser profile bound to IAT or PROD. Supports OAuth2 client credentials, PKCS#12 mTLS, single requests, sequential polling, JSONL diagnostics and latency statistics. Native Kafka and automatic TechUser enrolment are not implemented.
+Diagnose EcoHub SAF REST connectivity using a local TechUser profile for IAT or PROD. Run authenticated requests, repeat them to investigate intermittent failures, and collect local diagnostics.
 
-`docs/architecture.md` is the authoritative specification. This release implements its first milestone.
+**Keep real credentials, certificates, customer payloads, profiles and diagnostic files outside Git.** Use `~/.config/saf-cli-tester/` for local configuration. Redaction cannot remove every kind of sensitive business data.
 
-## Installation and development
+## Features
 
-Requires Node.js >=20.15.1 and npm. No native build dependencies are required.
+- OAuth2 client credentials and PKCS#12 (`.p12`) mTLS authentication.
+- Single REST requests and sequential polling by count or duration.
+- YAML request templates with optional expected statuses.
+- JSONL diagnostics, request/correlation IDs and latency statistics.
+- Optional CSV and JSON summary exports.
+- Explicit protection against PROD writes.
+
+[Architecture](docs/architecture.md) is the authoritative architecture specification; this release implements its first milestone. Kafka and automatic TechUser enrolment are roadmap items only.
+
+## Quick Start
+
+Requires **Node.js >=20.15.1** and npm. From the repository root:
 
 ```sh
 npm ci
-npm run check
-npm test
 npm run build
 npm run dev -- --help
+mkdir -p ~/.config/saf-cli-tester/profiles
+cp examples/profile.oauth2.example.yaml ~/.config/saf-cli-tester/profiles/example-iat.yaml
+chmod 600 ~/.config/saf-cli-tester/profiles/example-iat.yaml
 ```
 
-Development compiles TypeScript before running. There is no lint configuration; strict TypeScript checks are provided. To expose the executable locally, build first and run `npm link`, then use `saf-cli-tester --help`. Direct execution also works with `node dist/cli/index.js`.
+Edit the copied profile outside the repository. Replace placeholder URLs with your approved IAT endpoints. Supply `SAF_EXAMPLE_CLIENT_ID` and `SAF_EXAMPLE_CLIENT_SECRET` as exported environment variables through your shell or secret manager. **`.env` files are not automatically loaded.**
 
-## Local configuration and profiles
+```sh
+npm run dev -- profiles validate example-iat
+npm run dev -- profiles show example-iat
+npm run dev -- rest request --profile example-iat --path /example
+```
 
-Real configuration belongs outside this repository, under `~/.config/saf-cli-tester/`. Use `--config-dir <directory>` to select another local root. No files are created there until a request run creates its log.
+Replace `/example` with an actual SAF resource path. All URLs and resource paths in this README are placeholders. Validation is local; the final command contacts the configured service. Each run prints its environment, run ID, log location, results and final statistics.
+
+Examples use `npm run dev --`, which builds before execution. After a build, you can also use `node dist/cli/index.js`, or run `npm link` and use `saf-cli-tester`.
+
+## Configuration
+
+The default root is `~/.config/saf-cli-tester/`. Inspect paths and effective application settings with:
 
 ```sh
 npm run dev -- config paths
 npm run dev -- config show
-mkdir -p ~/.config/saf-cli-tester/profiles
-cp examples/profile.oauth2.example.yaml ~/.config/saf-cli-tester/profiles/example-iat.yaml
+npm run dev -- --config-dir ~/saf-local config paths
 ```
 
-Edit the copied profile with your endpoints and variable names. OAuth2 profiles can store a direct client ID and secret in the external local file or reference exported environment variables; use your shell or secret manager to supply them. `.env` files are not automatically read. Never put real values in the examples or command arguments. See [profile configuration](docs/profiles.md) for OAuth2 and mTLS details.
+Profiles belong in `profiles/`, certificates in `certificates/`, and diagnostics in `logs/` beneath that root. Reading configuration does not create directories. An optional `config.yaml` supports:
+
+```yaml
+rest:
+  timeoutMs: 30000
+  diagnosticBodyMaxBytes: 65536
+  headers:
+    Accept: application/json
+poll:
+  intervalSeconds: 60
+```
+
+Missing application configuration uses defaults; invalid existing configuration fails. Unknown fields are rejected. Request settings take precedence in this order: CLI, template, profile, application settings/defaults. Headers merge case-insensitively. Environment always comes from the profile. See [configuration details](docs/configuration.md).
+
+## Profiles
+
+A profile represents one TechUser in exactly one environment: `IAT` for integration acceptance testing or `PROD` for production. Use separate profiles for each environment. There is no CLI environment override; PROD also has the write guard described below.
+
+Save profiles as `<name>.yaml` in the local `profiles/` directory. The filename must match the YAML `name`. Names start with a letter or number and contain only letters, numbers, `_` or `-`.
+
+Every profile requires `name`, `environment`, `rest.baseUrl` and `auth`. Profile `rest` also accepts optional `timeoutMs` and `headers`. URLs require HTTPS without embedded credentials or fragments.
 
 ```sh
 npm run dev -- profiles list
@@ -37,27 +78,131 @@ npm run dev -- profiles show example-iat
 npm run dev -- profiles validate example-iat
 ```
 
-For mTLS, copy `examples/profile.mtls.example.yaml` to your external profiles directory as `example-prod.yaml`, place the real P12 file in the external certificates directory, and export the configured password variable. Validation checks readability and whether Node can use the certificate/password combination without connecting to SAF.
+`list` shows names, environments and authentication modes. `show` prints sanitized configuration, including `[REDACTED]` for a direct client secret. `validate` checks the schema and credential availability; for mTLS it also checks certificate readability and whether Node can use the certificate/password combination. **Validation performs no authentication or network request.** See [profiles](docs/profiles.md).
 
-## Requests
+## OAuth2
 
-```sh
-npm run dev -- rest request --profile example-iat --method GET --path /example
-npm run dev -- rest request --profile example-iat --method POST --path /example --body '{"foo":"bar"}' --header 'Content-Type: application/json'
-npm run dev -- rest request --profile example-iat --method POST --path /example --body-file ~/saf-test-data/request.json
-npm run dev -- rest request --profile example-iat --path /example --header 'Accept: application/json' --header 'X-Something: value'
-npm run dev -- rest poll --profile example-iat --path /example --interval 60 --count 120
-npm run dev -- rest poll --profile example-iat --path /example --interval 60 --duration 2h --timeout 30000
-npm run dev -- run --profile example-iat --request examples/request.example.yaml
+Example external profile, `~/.config/saf-cli-tester/profiles/example-iat.yaml`:
+
+```yaml
+name: example-iat
+environment: IAT
+rest:
+  baseUrl: https://example.invalid
+  timeoutMs: 30000
+auth:
+  mode: oauth2
+  openIdConfigurationUrl: https://example.invalid/.well-known/openid-configuration
+  clientIdEnv: SAF_EXAMPLE_CLIENT_ID
+  clientSecretEnv: SAF_EXAMPLE_CLIENT_SECRET
+  scope: https://graph.microsoft.com/.default
+  tokenAuthMethod: client_secret_basic
 ```
 
-The method defaults to GET. Paths must be origin-relative and remain on the configured profile origin. Redirects are not followed. HTTPS and certificate verification are required for profiles. `--timeout` is in milliseconds and covers each HTTP exchange, including discovery/token exchanges individually. `--interval` is in seconds. Polling requires a count or duration; mutating polling requires an explicit interval. There are no overlapping requests or catch-up bursts. Ctrl+C/SIGTERM aborts active work and prints statistics.
+Use `openIdConfigurationUrl` for discovery or `tokenEndpoint` for an explicit token URL. If both are supplied, `tokenEndpoint` wins. Verify trusted endpoints before supplying credentials: discovery can return a token endpoint on another HTTPS origin.
 
-PROD is displayed for each run. POST, PUT, PATCH and DELETE require `--allow-prod-write` in PROD, checked before authentication, body-file reads or network access. CLI arguments cannot change a profile's environment.
+Credentials must be exactly one complete pair:
 
-## Diagnostics and security
+- `clientIdEnv` + `clientSecretEnv`: names of exported environment variables.
+- `clientId` + `clientSecret`: nonempty direct values in the external local profile.
 
-Optional exports work with `rest request`, `rest poll`, and `run`:
+Mixed pairs are rejected. Keep direct secrets outside Git and restrict the profile to mode `0600`. Never put real secrets in command arguments or tracked examples.
+
+`tokenAuthMethod` defaults to `client_secret_basic`; `client_secret_post` sends credentials in the form body. Optional `scope` must be nonempty when set; for EcoHub SAF, use `https://graph.microsoft.com/.default`. Tokens must be Bearer tokens with a positive numeric `expires_in`. They are cached only in memory and renewed before expiry.
+
+## mTLS
+
+Example external profile, `~/.config/saf-cli-tester/profiles/example-prod.yaml`:
+
+```yaml
+name: example-prod
+environment: PROD
+rest:
+  baseUrl: https://example.invalid
+auth:
+  mode: mtls
+  p12Path: ~/.config/saf-cli-tester/certificates/example-prod.p12
+  p12PasswordEnv: SAF_EXAMPLE_P12_PASSWORD
+```
+
+Start with [the mTLS example](examples/profile.mtls.example.yaml). Store the real P12 outside the repository and export the password variable through your shell or secret manager. Prefer absolute or `~/` certificate paths; relative paths resolve from the working directory.
+
+```sh
+npm run dev -- profiles validate example-prod
+```
+
+Certificate material is loaded only during validation or a request and is never logged. Server certificate verification remains enabled.
+
+## REST Requests
+
+The method defaults to `GET`. Supported methods are `GET`, `HEAD`, `OPTIONS`, `POST`, `PUT`, `PATCH` and `DELETE`.
+
+```sh
+npm run dev -- rest request --profile example-iat --path /example
+npm run dev -- rest request --profile example-iat --method POST --path /example --body '{"foo":"bar"}' --header 'Content-Type: application/json'
+npm run dev -- rest request --profile example-iat --method POST --path /example --body-file ~/saf-test-data/request.json --header 'Content-Type: application/json'
+npm run dev -- rest request --profile example-iat --path /example --header 'Accept: application/json' --header 'X-Something: value' --timeout 30000
+```
+
+Paths must start with a single `/` and stay on the profile's origin. They resolve from the origin, not beneath a base URL path. Redirects are not followed. Choose `--body` or `--body-file`, never both; GET/HEAD cannot have a body. Keep sensitive payloads in external body files.
+
+`--header` is repeatable. Reserved headers (`Authorization`, `Proxy-Authorization`, `Cookie`, `Host`, `Content-Length`, `Transfer-Encoding`, `Connection`) cannot be supplied. Authentication headers are managed by the tool.
+
+`--timeout` is a positive integer in milliseconds. It applies to each HTTP exchange, including discovery and token exchanges individually. Any non-2xx response is a failed request.
+
+## Polling
+
+Choose exactly one bound: a positive integer `--count` or a positive `--duration` with units `ms`, `s`, `m` or `h`. Fractional durations are supported.
+
+```sh
+npm run dev -- rest poll --profile example-iat --path /example --interval 60 --count 120
+npm run dev -- rest poll --profile example-iat --path /example --interval 60 --duration 2h --timeout 30000
+```
+
+`--interval` is in seconds and controls the interval between request starts. GET/HEAD/OPTIONS use the configured default (60 seconds unless changed) when it is omitted. POST/PUT/PATCH/DELETE polling requires an explicit interval.
+
+Requests run sequentially, with no overlap or catch-up bursts. Slow requests can extend the actual interval. Ctrl+C or SIGTERM aborts active work and prints final statistics.
+
+## Request Templates
+
+Templates complement ad-hoc requests. Save reusable YAML locally; keep real payloads outside Git:
+
+```yaml
+name: minute-poll-test
+request:
+  method: GET
+  path: /example
+poll:
+  intervalSeconds: 60
+  count: 120
+expect:
+  status: [200]
+```
+
+```sh
+npm run dev -- run --profile example-iat --request examples/request.example.yaml
+npm run dev -- run --profile example-iat --request examples/request.example.yaml --count 5 --interval 10
+```
+
+Omit `poll` for a single request. `request` accepts `method`, `path`, `headers`, `body` or `bodyFile`, and `timeoutMs`. `poll` accepts `intervalSeconds` and exactly one of `count` or `duration`. Optional `expect.status` narrows accepted 2xx statuses; other 2xx responses become `UNEXPECTED_STATUS`. Non-2xx responses remain failures even if listed.
+
+`run` accepts the REST request and polling flags. CLI settings override templates; an explicit CLI body source replaces the template body source, and CLI count or duration replaces the template bound. Relative template `bodyFile` paths resolve beside the template; CLI body-file paths resolve from the working directory. `~/` paths are supported.
+
+## Diagnostics
+
+Every run writes `<config-dir>/logs/<runId>.jsonl`. Request records include timestamps, sequence number, profile/environment, method/path, status when available, duration, request/correlation IDs when available, and classified failures. The final summary reports request and success counts, 4xx/5xx/500/timeout counts, success and 5xx rates, and min/average/p50/p95/max latency. Percentiles use nearest rank.
+
+HTTP **4xx/5xx** records also capture sanitized JSON/text response diagnostics and allowlisted response identifiers. Request bodies, query values and arbitrary headers are omitted; successful response bodies are not logged. The console does not print response bodies.
+
+Error-body capture defaults to **64 KiB**. Set `rest.diagnosticBodyMaxBytes` in local `config.yaml` to an integer from 0 to 1048576 bytes. Truncated bodies are marked and their content omitted to avoid partial-secret leaks. Empty and binary bodies contain metadata only. Diagnostic read/processing failures preserve the original HTTP classification.
+
+OAuth2 `AUTH_ERROR` records can include `oauth2.stage`, HTTP status and sanitized `error`/`error_description` strings. Each string is limited to 1024 characters with control characters removed; other authentication response fields and non-JSON bodies are omitted.
+
+**Logs can contain sensitive business data despite redaction. Protect them and never commit them.** See [diagnostics](docs/diagnostics.md) for the response-header allowlist, record format and capture behavior.
+
+## Exports
+
+Optional exports work with `rest request`, `rest poll` and `run`. JSONL diagnostics are still written. Without `--export`, no export files are created.
 
 ```sh
 npm run dev -- rest request --profile example-iat --path /example --export csv
@@ -67,20 +212,94 @@ npm run dev -- rest request --profile example-iat --path /example --export csv -
 npm run dev -- run --profile example-iat --request examples/request.example.yaml --export both --output ~/saf-results
 ```
 
-Without `--export`, behavior remains unchanged. Defaults are `<config-dir>/logs/<runId>.csv` and `<runId>.summary.json`, normally under `~/.config/saf-cli-tester/`. For one format, `--output` is an exact filename; for `both`, it is a directory containing these run-ID filenames. Parent directories are created; existing files are never overwritten. `--output` requires `--export`. Default export locations inside Git repositories (including symlinked locations) are rejected; explicit `--output` can select another path. Exports are local diagnostics and must never be committed. See [export schema and examples](docs/diagnostics.md#optional-run-exports).
+| Format | Default file under `<config-dir>/logs/` | Contents |
+| --- | --- | --- |
+| `csv` | `<runId>.csv` | One allowlisted row per completed request, including failures |
+| `summary` | `<runId>.summary.json` | Run metadata and aggregate statistics |
+| `both` | Both files above | CSV and summary |
 
-Each run writes `~/.config/saf-cli-tester/logs/<runId>.jsonl` with timestamps, sequence, profile/environment, method/path, status, latency, request/correlation IDs and classified failures. The final summary includes success/4xx/5xx/500/timeout counts, rates and min/average/p50/p95/max latency. Percentiles use the nearest-rank definition. Failed requests produce exit code 1; interruption produces 130.
+`--output` requires `--export`. For one format it is an exact filename; for `both` it is a directory containing run-ID filenames. Parent directories are created and existing files are never overwritten. Default export paths inside Git repositories, including symlinked locations, are rejected; explicit output paths are user-selected.
 
-Logs omit request bodies, URL query values and arbitrary headers. HTTP 4xx/5xx records include sanitized JSON/text response diagnostics and allowlisted response identifiers; 2xx body logging is unchanged. Error body capture defaults to 64 KiB, configurable with `rest.diagnosticBodyMaxBytes` (0–1 MiB). Truncated bodies are marked and their content omitted to prevent partial-secret leaks; empty and binary bodies have metadata only. See [REST diagnostics](docs/diagnostics.md) for the header allowlist and failure behavior. Logs remain local, may contain sensitive business data even after secret redaction, and must not be committed to Git. Treat profile names, path segments and correlation IDs as potentially sensitive and protect the local logs. New log files use mode 0600 and new directories 0700.
+Exports use central redaction and exclude request payloads, headers, query values, response bodies, OAuth diagnostics and certificate material. Keep them outside Git. See [export schemas and examples](docs/diagnostics.md#optional-run-exports).
 
-All console/log output uses central recursive redaction. Tokens are cached only in memory. Real secrets, certificates, customer payloads and local profiles must remain outside Git. Review [security guidance](docs/security.md), [configuration](docs/configuration.md) and the ignore rules before using real SAF data. Before any future commit/push, inspect `git status` and `git diff --cached`.
+## PROD Safety
 
-Kafka produce/consume, interactive profile creation, scenarios and comparisons are planned later; the separate auth, config, logging and statistics modules leave room for them.
+The profile fixes the environment, and each run displays it. **POST, PUT, PATCH and DELETE in PROD require `--allow-prod-write`.** The guard runs before authentication, body-file reads or network access. It cannot be disabled in application configuration.
 
-OAuth2 profiles accept either direct `clientId` + `clientSecret` or environment references `clientIdEnv` + `clientSecretEnv`. Both values in the selected pair are required and nonempty; mixed direct/environment fields are rejected with no precedence rule. `profiles validate` supports both variants (environment references must be exported). `profiles show` displays `clientSecret` as `[REDACTED]`; central redaction also scrubs registered direct secrets from console output, errors and JSONL diagnostics.
+For an intentional, authorized PROD write:
 
-Use direct secrets only in local profile files outside the Git repository, for example `~/.config/saf-cli-tester/profiles/example-iat.yaml`. Restrict permissions with `chmod 600 ~/.config/saf-cli-tester/profiles/example-iat.yaml`. Never put real credentials in tracked examples or CLI arguments. Environment variables or a secret manager remain supported; `.env` files are not automatically loaded.
+```sh
+npm run dev -- rest request --profile example-prod --method POST --path /example --body-file ~/saf-test-data/request.json --header 'Content-Type: application/json' --allow-prod-write
+```
 
-OAuth2 `auth.scope` is optional and must be a nonempty string when configured. For EcoHub SAF, set `scope: https://graph.microsoft.com/.default`. It is included in the `application/x-www-form-urlencoded` client-credentials token request for either authentication method. Omitting it preserves existing token request behavior.
+Mutating polls also require an explicit interval.
 
-`AUTH_ERROR` diagnostics retain the OAuth2 exchange stage, HTTP status and sanitized string fields `error` and `error_description` under `oauth2` in request results and JSONL logs. Error fields are limited to 1024 characters and control characters are removed. Other response fields and non-JSON bodies are omitted; client secrets and access tokens are redacted.
+## Security
+
+- Keep credentials, profiles, certificates, customer payloads, logs and exports outside the repository. Use restrictive permissions for manually created files and directories.
+- Never pass real secrets in CLI arguments: shell history and process listings can expose them. Use exported variables, a secret manager or a protected external profile.
+- HTTPS and certificate verification are required; redirects are not followed. Verify OAuth discovery/token endpoints before providing secrets.
+- Central recursive redaction protects recognized secret fields and registered secrets/tokens, but profile names, path segments and correlation IDs may still be sensitive.
+
+New log/export files use mode `0600` and new directories `0700`; existing directory permissions are unchanged. Ignore rules do not protect already tracked files or arbitrary payload filenames. Before any commit or push, inspect `git status` and `git diff --cached`. Read [security guidance](docs/security.md) before using real SAF data.
+
+## Exit Codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Command completed successfully; a request run had no failed requests |
+| `1` | Invalid arguments/configuration, command failure, or at least one failed request |
+| `130` | Request run interrupted by Ctrl+C or SIGTERM |
+
+## Useful Commands
+
+| Task | Command |
+| --- | --- |
+| Top-level help | `npm run dev -- --help` |
+| Request flags | `npm run dev -- rest request --help` |
+| Polling flags | `npm run dev -- rest poll --help` |
+| Template flags | `npm run dev -- run --help` |
+| Local paths | `npm run dev -- config paths` |
+| Application settings | `npm run dev -- config show` |
+| List profiles | `npm run dev -- profiles list` |
+| Inspect a profile | `npm run dev -- profiles show example-iat` |
+| Validate locally | `npm run dev -- profiles validate example-iat` |
+
+## Troubleshooting
+
+| Symptom | What to check |
+| --- | --- |
+| `AUTH_ERROR` | Run `profiles validate` first. For OAuth2, check trusted discovery/token URLs, credentials, scope and token authentication method; inspect the JSONL `oauth2` stage/status and sanitized error fields when present. For mTLS, check P12 readability and password compatibility. Local validation does not prove server acceptance. |
+| HTTP `401`/`403` | Check that the TechUser and credentials belong to the selected environment and have access to the resource. These are REST response statuses; token-endpoint failures are reported separately as `AUTH_ERROR`. |
+| HTTP `404` | Check `rest.baseUrl` and the resource path. `/example` is a placeholder; request paths resolve from the origin, not beneath a base URL path. |
+| HTTP `500` | Inspect sanitized response diagnostics and request/correlation IDs in JSONL. Use bounded polling to investigate recurrence and share relevant sanitized evidence through an approved support channel. |
+
+## Documentation
+
+- [Architecture](docs/architecture.md) — authoritative architecture specification, including future milestones.
+- [Configuration](docs/configuration.md) — defaults, precedence and template settings.
+- [Profiles](docs/profiles.md) — authentication fields and local validation.
+- [Diagnostics](docs/diagnostics.md) — JSONL response capture and export schemas.
+- [Security](docs/security.md) — secret handling, local storage and PROD protection.
+
+## Development
+
+```sh
+npm ci
+npm run check
+npm test
+npm run build
+```
+
+No native build dependencies are required. `check` provides strict TypeScript checks; there is no lint configuration. Tests use dummy credentials and mocks/local servers. Real SAF tests must be initiated manually.
+
+## Roadmap
+
+The following are planned, **not implemented**:
+
+- Native Kafka connectivity, produce/consume and Kafka diagnostics.
+- Automatic TechUser enrolment.
+- Interactive profile creation.
+- Reusable scenarios, profile comparisons and advanced reporting.
+
+See [the architecture specification](docs/architecture.md) for the broader direction. Its proposed commands and future requirements do not imply current CLI support.
