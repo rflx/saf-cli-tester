@@ -504,6 +504,8 @@ Templates complement CLI requests; they do not replace them.
 
 # 14. Logging
 
+Optional `--export csv|summary|both` on REST and template commands adds streamed allowlisted CSV rows and/or a JSON summary with run metadata. `--output` is a file for one format and a directory for both. Defaults use run-ID filenames in the local config logs directory and reject paths inside Git repositories. Export persistence reuses central redaction and existing statistics; JSONL remains unchanged without the flag. See [export details](diagnostics.md#optional-run-exports).
+
 Logging is one of the most important parts of the project.
 
 Each execution should receive a unique run ID.

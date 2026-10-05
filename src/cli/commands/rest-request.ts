@@ -8,6 +8,7 @@ import { OAuth2AuthProvider } from '../../auth/oauth2.js';
 import { MtlsAuthProvider } from '../../auth/mtls.js';
 import { Logger } from '../../logging/logger.js';
 import { openLog } from '../../logging/jsonl.js';
+import { exportFormat, RunExports } from '../../logging/exports.js';
 import type { Redactor } from '../../logging/redactor.js';
 import { enforceProdSafety, executeRequest, resolveRequest } from '../../rest/request.js';
 import { durationMs, poll } from '../../rest/poller.js';
@@ -20,7 +21,8 @@ export function requestFlags(command: Command): Command {
   return command.requiredOption('--profile <name>', 'TechUser profile').option('--method <method>', 'HTTP method')
     .option('--path <path>', 'Origin-relative path').option('--body <body>', 'Request body').option('--body-file <file>', 'Local body file')
     .option('--header <header>', 'Header: value (repeatable)', (value: string, previous: string[]) => [...previous, value], [])
-    .option('--timeout <ms>', 'Request timeout in milliseconds', Number).option('--allow-prod-write', 'Permit writes to PROD');
+    .option('--timeout <ms>', 'Request timeout in milliseconds', Number).option('--allow-prod-write', 'Permit writes to PROD')
+    .option('--export <format>', 'Export csv, summary or both', exportFormat).option('--output <path>', 'Export file (single format) or directory (both)');
 }
 export function pollFlags(command: Command): Command {
   return command.option('--interval <seconds>', 'Polling start interval in seconds', Number).option('--count <n>', 'Number of requests', Number).option('--duration <duration>', 'Duration, e.g. 2h');
@@ -51,24 +53,31 @@ export async function runRequest(program: Command, options: Record<string,unknow
   if (shouldPoll && !['GET','HEAD','OPTIONS'].includes(request.method) && pollOptions.intervalSeconds === undefined) throw new Error('CONFIG_ERROR: Mutating polling requires an explicit interval');
   const duration = pollOptions.duration ? durationMs(pollOptions.duration) : undefined;
   if (shouldPoll && ((!pollOptions.count && !duration) || (pollOptions.count && duration))) throw new Error('CONFIG_ERROR: Polling requires count or duration, exclusively');
-  const runId = randomUUID(); const logger = new Logger(redactor, await openLog(paths.logs, runId));
+  const runId = randomUUID(); const startTime = new Date().toISOString();
+  const exports = await RunExports.open(exportFormat(options.export), options.output as string | undefined, paths.logs, runId, redactor);
+  let logger: Logger;
+  try { logger = new Logger(redactor, await openLog(paths.logs, runId)); }
+  catch (error) { await exports?.close(); throw error; }
   const stats = new StatsCollector(); const controller = new AbortController();
   const stop = () => controller.abort(); process.once('SIGINT', stop); process.once('SIGTERM', stop);
   const auth = profile.auth.mode === 'oauth2' ? new OAuth2AuthProvider(profile.auth, redactor) : new MtlsAuthProvider(profile.auth, redactor);
   try {
     logger.console(`Profile: ${profile.name}\nEnvironment: ${profile.environment}\nRun ID: ${runId}\nLog: ${paths.logs}/${runId}.jsonl`);
+    if (exports) logger.console(`Exports: ${exports.files.join(', ')}`);
     const task = async (sequenceNumber: number) => {
       const timestamp = new Date().toISOString(); const result = await executeRequest(auth, request, controller.signal, template?.expect?.status, redactor);
       stats.add(result);
       // URL query values and request payloads are deliberately omitted from persisted diagnostics.
       const record = { timestamp, runId, sequenceNumber, profile: profile.name, environment: profile.environment, method: request.method, path: request.url.pathname, ...result };
       await logger.record(record);
+      await exports?.record(record);
       logger.console(`${timestamp} #${sequenceNumber} ${request.method} ${request.url.pathname} ${result.statusCode ?? result.errorType} ${result.durationMs.toFixed(2)} ms ${result.result}`);
     };
     if (shouldPoll) await poll(task, { intervalMs: (pollOptions.intervalSeconds ?? config.poll.intervalSeconds)*1000, count: pollOptions.count, durationMs: duration, signal: controller.signal });
     else await task(1);
     const summary = stats.summary(); await logger.record({ runId, summary }); logger.console(formatSummary(summary));
+    await exports?.summary({ runId, profile: profile.name, environment: profile.environment, startTime, endTime: new Date().toISOString() }, summary);
     if (controller.signal.aborted) process.exitCode = 130;
     else if (summary.successful < summary.requests) process.exitCode = 1;
-  } finally { process.removeListener('SIGINT', stop); process.removeListener('SIGTERM', stop); await logger.close(); }
+  } finally { process.removeListener('SIGINT', stop); process.removeListener('SIGTERM', stop); try { await logger.close(); } finally { await exports?.close(); } }
 }

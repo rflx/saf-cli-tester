@@ -1,5 +1,7 @@
 # Security
 
+Optional CSV and summary JSON exports use central redaction and an explicit request-field allowlist. They exclude headers, tokens, request payloads and certificate material. Exports are local diagnostics and must never be committed. Default export paths are rejected inside Git repositories, including symlinked locations; explicit `--output` can target a user-selected path. New export files use exclusive creation and mode 0600. `.gitignore` excludes `*.csv` and `*.summary.json`; arbitrary custom output names still require care when staging files.
+
 Keep real credentials, profiles, certificates, customer payloads and diagnostic logs outside this Git repository. Recommended root: `~/.config/saf-cli-tester/`. Apply restrictive filesystem permissions to all manually created secret files and directories. Existing directory permissions are not changed by the CLI.
 
 `.gitignore` excludes environment files (except the safe `.env.example`), local `profiles/`, secrets, certificates, P12/PFX/private-key/PEM files, logs and generated output. Ignore rules do not protect already tracked files or arbitrary payload filenames. Review `git status` and `git diff --cached` before committing or pushing. Do not stage arbitrary local configuration directories.

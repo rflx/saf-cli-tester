@@ -57,6 +57,18 @@ PROD is displayed for each run. POST, PUT, PATCH and DELETE require `--allow-pro
 
 ## Diagnostics and security
 
+Optional exports work with `rest request`, `rest poll`, and `run`:
+
+```sh
+npm run dev -- rest request --profile example-iat --path /example --export csv
+npm run dev -- rest poll --profile example-iat --path /example --interval 60 --count 120 --export summary
+npm run dev -- rest poll --profile example-iat --path /example --interval 60 --count 120 --export both
+npm run dev -- rest request --profile example-iat --path /example --export csv --output ~/saf-results/request.csv
+npm run dev -- run --profile example-iat --request examples/request.example.yaml --export both --output ~/saf-results
+```
+
+Without `--export`, behavior remains unchanged. Defaults are `<config-dir>/logs/<runId>.csv` and `<runId>.summary.json`, normally under `~/.config/saf-cli-tester/`. For one format, `--output` is an exact filename; for `both`, it is a directory containing these run-ID filenames. Parent directories are created; existing files are never overwritten. `--output` requires `--export`. Default export locations inside Git repositories (including symlinked locations) are rejected; explicit `--output` can select another path. Exports are local diagnostics and must never be committed. See [export schema and examples](docs/diagnostics.md#optional-run-exports).
+
 Each run writes `~/.config/saf-cli-tester/logs/<runId>.jsonl` with timestamps, sequence, profile/environment, method/path, status, latency, request/correlation IDs and classified failures. The final summary includes success/4xx/5xx/500/timeout counts, rates and min/average/p50/p95/max latency. Percentiles use the nearest-rank definition. Failed requests produce exit code 1; interruption produces 130.
 
 Logs omit request bodies, URL query values and arbitrary headers. HTTP 4xx/5xx records include sanitized JSON/text response diagnostics and allowlisted response identifiers; 2xx body logging is unchanged. Error body capture defaults to 64 KiB, configurable with `rest.diagnosticBodyMaxBytes` (0–1 MiB). Truncated bodies are marked and their content omitted to prevent partial-secret leaks; empty and binary bodies have metadata only. See [REST diagnostics](docs/diagnostics.md) for the header allowlist and failure behavior. Logs remain local, may contain sensitive business data even after secret redaction, and must not be committed to Git. Treat profile names, path segments and correlation IDs as potentially sensitive and protect the local logs. New log files use mode 0600 and new directories 0700.
