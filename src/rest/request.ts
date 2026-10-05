@@ -1,3 +1,4 @@
+import { OAuth2AuthError, type OAuth2Diagnostics } from '../auth/oauth2.js';
 import type { Profile } from '../profiles/types.js';
 import type { AppConfig } from '../config/types.js';
 import type { RequestOptions } from '../requests/schema.js';
@@ -34,6 +35,7 @@ export interface RequestResult {
   result: string;
   errorType?: string;
   networkErrorCode?: string;
+  oauth2?: OAuth2Diagnostics;
 }
 export async function executeRequest(auth: AuthProvider, request: ReturnType<typeof resolveRequest>, signal?: AbortSignal, expected?: number[]): Promise<RequestResult> {
   const started = performance.now();
@@ -45,6 +47,6 @@ export async function executeRequest(auth: AuthProvider, request: ReturnType<typ
     return { statusCode: response.status, durationMs: response.durationMs, ...correlation(response.headers), result: errorType ? 'failure' : 'success', errorType };
   } catch (error) {
     const message = error instanceof Error ? error.message : '';
-    return { durationMs: performance.now() - started, result: 'failure', errorType: message.startsWith('AUTH_ERROR') ? 'AUTH_ERROR' : message.startsWith('CONFIG_ERROR') ? 'CONFIG_ERROR' : classifyError(error), networkErrorCode: (error as NodeJS.ErrnoException).code };
+    return { durationMs: performance.now() - started, result: 'failure', errorType: message.startsWith('AUTH_ERROR') ? 'AUTH_ERROR' : message.startsWith('CONFIG_ERROR') ? 'CONFIG_ERROR' : classifyError(error), networkErrorCode: (error as NodeJS.ErrnoException).code, ...(error instanceof OAuth2AuthError && error.diagnostics ? { oauth2: error.diagnostics } : {}) };
   }
 }

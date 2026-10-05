@@ -4,7 +4,7 @@ import { httpsUrl, headersSchema } from '../config/schema.js';
 const envName = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/);
 const oauth = z.object({ mode: z.literal('oauth2'), clientId: z.string().min(1).optional(), clientSecret: z.string().min(1).optional(),
   clientIdEnv: envName.optional(), clientSecretEnv: envName.optional(),
-  openIdConfigurationUrl: httpsUrl.optional(), tokenEndpoint: httpsUrl.optional(), scope: z.string().optional(),
+  openIdConfigurationUrl: httpsUrl.optional(), tokenEndpoint: httpsUrl.optional(), scope: z.string().refine(value => value.trim().length > 0, 'OAuth scope must be nonempty').optional(),
   tokenAuthMethod: z.enum(['client_secret_basic', 'client_secret_post']).default('client_secret_basic')
 }).strict().refine(a =>
   (a.clientId !== undefined && a.clientSecret !== undefined && a.clientIdEnv === undefined && a.clientSecretEnv === undefined) ||

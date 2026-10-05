@@ -12,6 +12,8 @@ import { loadProfile } from '../src/profiles/loader.js';
 import { Redactor } from '../src/logging/redactor.js';
 import { Logger } from '../src/logging/logger.js';
 import { openLog } from '../src/logging/jsonl.js';
+import { configSchema } from '../src/config/schema.js';
+import { executeRequest, resolveRequest } from '../src/rest/request.js';
 import { OAuth2AuthProvider } from '../src/auth/oauth2.js';
 
 const password = 'dummy-direct-secret +/"\\';
@@ -79,4 +81,56 @@ test('profiles show and validate support direct YAML and never disclose secrets 
       assert.match(result.stderr,/CONFIG_ERROR/); assert.ok(!result.stderr.includes(password)); assert.ok(!result.stderr.includes(JSON.stringify(password).slice(1,-1))); return true;
     });
   } finally { await rm(dir,{recursive:true,force:true}); }
+});
+
+const scope = 'https://graph.microsoft.com/.default';
+
+test('OAuth scope validates and is form encoded for both token authentication methods', async () => {
+  for (const tokenAuthMethod of ['client_secret_basic', 'client_secret_post'] as const) {
+    const p = profileSchema.parse({ ...direct, auth: { ...direct.auth, scope, tokenAuthMethod } });
+    await validateProfile(p);
+    if (p.auth.mode !== 'oauth2') throw new Error();
+    const redactor = new Redactor();
+    const auth = new OAuth2AuthProvider(p.auth, redactor, async (_url, method, headers, body) => {
+      assert.equal(method, 'POST');
+      assert.equal(headers['Content-Type'], 'application/x-www-form-urlencoded');
+      assert.equal(new URLSearchParams(body).get('scope'), scope);
+      assert.equal(new URLSearchParams(body).get('grant_type'), 'client_credentials');
+      return { status: 200, headers: {}, durationMs: 1, body: JSON.stringify({ access_token: 'scope-test-token', token_type: 'Bearer', expires_in: 3600 }) };
+    });
+    assert.equal((await auth.prepareRequest({ timeoutMs: 100 })).headers.Authorization, 'Bearer scope-test-token');
+    assert.equal(redactor.text(`scope-test-token ${password}`), '[REDACTED] [REDACTED]');
+  }
+  for (const scope of ['', '  ', 123, null]) {
+    assert.equal(profileSchema.safeParse({ ...direct, auth: { ...direct.auth, scope } }).success, false);
+  }
+  assert.equal(profileSchema.safeParse(direct).success, true);
+});
+
+test('OAuth HTTP diagnostics reach logs with only sanitized safe server fields', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'saf-oauth-diagnostics-'));
+  try {
+    for (const stage of ['token', 'discovery'] as const) {
+      const p = profileSchema.parse({ ...direct, auth: { ...direct.auth, scope } });
+      if (p.auth.mode !== 'oauth2') throw new Error();
+      if (stage === 'discovery') { delete p.auth.tokenEndpoint; p.auth.openIdConfigurationUrl = 'https://example.invalid/discovery'; }
+      const r = new Redactor();
+      const auth = new OAuth2AuthProvider(p.auth, r, async () => ({
+        status: 401, headers: {}, durationMs: 1,
+        body: JSON.stringify({ error: 'invalid_client', error_description: `Rejected ${password} ${encodeURIComponent(password)} leaked-token\n`, clientSecret: password, access_token: 'leaked-token', arbitrary: 'omit-this' })
+      }));
+      await assert.rejects(auth.prepareRequest({ timeoutMs: 100 }), error => {
+        assert.ok(error instanceof Error); assert.match(error.message, /invalid_client/); assert.match(error.message, /401/);
+        assert.ok(!error.message.includes(password)); assert.ok(!error.message.includes('leaked-token')); return true;
+      });
+      const result = await executeRequest(auth, resolveRequest(configSchema.parse({}), p, { path: '/test' }));
+      assert.equal(result.errorType, 'AUTH_ERROR');
+      assert.deepEqual(result.oauth2, { stage, statusCode: 401, error: 'invalid_client', error_description: 'Rejected [REDACTED] [REDACTED] [REDACTED] ' });
+      const logger = new Logger(r, await openLog(dir, stage));
+      await logger.record(result); await logger.close();
+      const output = await readFile(join(dir, `${stage}.jsonl`), 'utf8');
+      assert.match(output, /invalid_client/); assert.ok(!output.includes('leaked-token')); assert.ok(!output.includes('omit-this'));
+      assert.ok(!output.includes(JSON.stringify(password).slice(1, -1)));
+    }
+  } finally { await rm(dir, { recursive: true, force: true }); }
 });
