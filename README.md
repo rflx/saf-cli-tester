@@ -24,16 +24,16 @@ npm ci
 npm run build
 npm run dev -- --help
 mkdir -p ~/.config/saf-cli-tester/profiles
-cp examples/profile.oauth2.example.yaml ~/.config/saf-cli-tester/profiles/example-iat.yaml
-chmod 600 ~/.config/saf-cli-tester/profiles/example-iat.yaml
+cp examples/profile.oauth2.example.yaml ~/.config/saf-cli-tester/profiles/example-profile.yaml
+chmod 600 ~/.config/saf-cli-tester/profiles/example-profile.yaml
 ```
 
-Edit the copied profile outside the repository. Replace placeholder URLs with your approved IAT endpoints. Supply `SAF_EXAMPLE_CLIENT_ID` and `SAF_EXAMPLE_CLIENT_SECRET` as exported environment variables through your shell or secret manager. **`.env` files are not automatically loaded.**
+Edit the copied profile outside the repository. Choose `IAT` or `PROD` for `environment` and replace placeholder URLs with approved endpoints for that environment. Supply `SAF_EXAMPLE_CLIENT_ID` and `SAF_EXAMPLE_CLIENT_SECRET` as exported environment variables through your shell or secret manager. **`.env` files are not automatically loaded.**
 
 ```sh
-npm run dev -- profiles validate example-iat
-npm run dev -- profiles show example-iat
-npm run dev -- rest request --profile example-iat --path /example
+npm run dev -- profiles validate example-profile
+npm run dev -- profiles show example-profile
+npm run dev -- rest request --profile example-profile --path /example
 ```
 
 Replace `/example` with an actual SAF resource path. All URLs and resource paths in this README are placeholders. Validation is local; the final command contacts the configured service. Each run prints its environment, run ID, log location, results and final statistics.
@@ -66,33 +66,33 @@ Missing application configuration uses defaults; invalid existing configuration 
 
 ## Profiles
 
-A profile represents one TechUser in exactly one environment: `IAT` for integration acceptance testing or `PROD` for production. Use separate profiles for each environment. There is no CLI environment override; PROD also has the write guard described below.
+A profile represents one TechUser and is permanently bound to exactly one environment: `IAT` for integration acceptance testing or `PROD` for production. The environment cannot be overridden from the CLI. Create separate profiles for separate TechUsers and environments as needed. Neither environment is the default or required choice; select the one appropriate to your TechUser. PROD has the write guard described below.
 
-Save profiles as `<name>.yaml` in the local `profiles/` directory. The filename must match the YAML `name`. Names start with a letter or number and contain only letters, numbers, `_` or `-`.
+Save profiles as `<profile-name>.yaml` in the local `profiles/` directory. The filename must match the YAML `name`. Names start with a letter or number and contain only letters, numbers, `_` or `-`.
 
 Every profile requires `name`, `environment`, `rest.baseUrl` and `auth`. Profile `rest` also accepts optional `timeoutMs` and `headers`. URLs require HTTPS without embedded credentials or fragments.
 
 ```sh
 npm run dev -- profiles list
-npm run dev -- profiles show example-iat
-npm run dev -- profiles validate example-iat
+npm run dev -- profiles show example-profile
+npm run dev -- profiles validate example-profile
 ```
 
 `list` shows names, environments and authentication modes. `show` prints sanitized configuration, including `[REDACTED]` for a direct client secret. `validate` checks the schema and credential availability; for mTLS it also checks certificate readability and whether Node can use the certificate/password combination. **Validation performs no authentication or network request.** See [profiles](docs/profiles.md).
 
 ## OAuth2
 
-Example external profile, `~/.config/saf-cli-tester/profiles/example-iat.yaml`:
+Example external profile, `~/.config/saf-cli-tester/profiles/example-profile.yaml`:
 
 ```yaml
-name: example-iat
-environment: IAT
+name: example-profile
+environment: IAT # or PROD; choose the environment for this TechUser
 rest:
-  baseUrl: https://example.invalid
+  baseUrl: https://<saf-base-url>
   timeoutMs: 30000
 auth:
   mode: oauth2
-  openIdConfigurationUrl: https://example.invalid/.well-known/openid-configuration
+  openIdConfigurationUrl: https://<openid-configuration-url>
   clientIdEnv: SAF_EXAMPLE_CLIENT_ID
   clientSecretEnv: SAF_EXAMPLE_CLIENT_SECRET
   scope: https://graph.microsoft.com/.default
@@ -112,23 +112,23 @@ Mixed pairs are rejected. Keep direct secrets outside Git and restrict the profi
 
 ## mTLS
 
-Example external profile, `~/.config/saf-cli-tester/profiles/example-prod.yaml`:
+Example external profile, `~/.config/saf-cli-tester/profiles/techuser-profile.yaml`:
 
 ```yaml
-name: example-prod
-environment: PROD
+name: techuser-profile
+environment: IAT # or PROD; choose the environment for this TechUser
 rest:
-  baseUrl: https://example.invalid
+  baseUrl: https://<saf-base-url>
 auth:
   mode: mtls
-  p12Path: ~/.config/saf-cli-tester/certificates/example-prod.p12
+  p12Path: ~/.config/saf-cli-tester/certificates/techuser-profile.p12
   p12PasswordEnv: SAF_EXAMPLE_P12_PASSWORD
 ```
 
 Start with [the mTLS example](examples/profile.mtls.example.yaml). Store the real P12 outside the repository and export the password variable through your shell or secret manager. Prefer absolute or `~/` certificate paths; relative paths resolve from the working directory.
 
 ```sh
-npm run dev -- profiles validate example-prod
+npm run dev -- profiles validate techuser-profile
 ```
 
 Certificate material is loaded only during validation or a request and is never logged. Server certificate verification remains enabled.
@@ -138,13 +138,13 @@ Certificate material is loaded only during validation or a request and is never 
 The method defaults to `GET`. Supported methods are `GET`, `HEAD`, `OPTIONS`, `POST`, `PUT`, `PATCH` and `DELETE`.
 
 ```sh
-npm run dev -- rest request --profile example-iat --path /example
-npm run dev -- rest request --profile example-iat --method POST --path /example --body '{"foo":"bar"}' --header 'Content-Type: application/json'
-npm run dev -- rest request --profile example-iat --method POST --path /example --body-file ~/saf-test-data/request.json --header 'Content-Type: application/json'
-npm run dev -- rest request --profile example-iat --path /example --header 'Accept: application/json' --header 'X-Something: value' --timeout 30000
+npm run dev -- rest request --profile example-profile --path /example
+npm run dev -- rest request --profile example-profile --method POST --path /example --body '{"foo":"bar"}' --header 'Content-Type: application/json'
+npm run dev -- rest request --profile example-profile --method POST --path /example --body-file ~/saf-test-data/request.json --header 'Content-Type: application/json'
+npm run dev -- rest request --profile example-profile --path /example --header 'Accept: application/json' --header 'X-Something: value' --timeout 30000
 ```
 
-Paths must start with a single `/` and stay on the profile's origin. They resolve from the origin, not beneath a base URL path. Redirects are not followed. Choose `--body` or `--body-file`, never both; GET/HEAD cannot have a body. Keep sensitive payloads in external body files.
+Paths must start with a single `/` and stay on the profile's origin. They resolve from the origin, not beneath a base URL path. Redirects are not followed. Choose `--body` or `--body-file`, never both; GET/HEAD cannot have a body. Keep sensitive payloads in external body files. If the profile belongs to PROD, these mutating requests also require `--allow-prod-write`; see [PROD Safety](#prod-safety).
 
 `--header` is repeatable. Reserved headers (`Authorization`, `Proxy-Authorization`, `Cookie`, `Host`, `Content-Length`, `Transfer-Encoding`, `Connection`) cannot be supplied. Authentication headers are managed by the tool.
 
@@ -155,8 +155,8 @@ Paths must start with a single `/` and stay on the profile's origin. They resolv
 Choose exactly one bound: a positive integer `--count` or a positive `--duration` with units `ms`, `s`, `m` or `h`. Fractional durations are supported.
 
 ```sh
-npm run dev -- rest poll --profile example-iat --path /example --interval 60 --count 120
-npm run dev -- rest poll --profile example-iat --path /example --interval 60 --duration 2h --timeout 30000
+npm run dev -- rest poll --profile example-profile --path /example --interval 60 --count 120
+npm run dev -- rest poll --profile example-profile --path /example --interval 60 --duration 2h --timeout 30000
 ```
 
 `--interval` is in seconds and controls the interval between request starts. GET/HEAD/OPTIONS use the configured default (60 seconds unless changed) when it is omitted. POST/PUT/PATCH/DELETE polling requires an explicit interval.
@@ -180,8 +180,8 @@ expect:
 ```
 
 ```sh
-npm run dev -- run --profile example-iat --request examples/request.example.yaml
-npm run dev -- run --profile example-iat --request examples/request.example.yaml --count 5 --interval 10
+npm run dev -- run --profile example-profile --request examples/request.example.yaml
+npm run dev -- run --profile example-profile --request examples/request.example.yaml --count 5 --interval 10
 ```
 
 Omit `poll` for a single request. `request` accepts `method`, `path`, `headers`, `body` or `bodyFile`, and `timeoutMs`. `poll` accepts `intervalSeconds` and exactly one of `count` or `duration`. Optional `expect.status` narrows accepted 2xx statuses; other 2xx responses become `UNEXPECTED_STATUS`. Non-2xx responses remain failures even if listed.
@@ -205,11 +205,11 @@ OAuth2 `AUTH_ERROR` records can include `oauth2.stage`, HTTP status and sanitize
 Optional exports work with `rest request`, `rest poll` and `run`. JSONL diagnostics are still written. Without `--export`, no export files are created.
 
 ```sh
-npm run dev -- rest request --profile example-iat --path /example --export csv
-npm run dev -- rest poll --profile example-iat --path /example --interval 60 --count 120 --export summary
-npm run dev -- rest poll --profile example-iat --path /example --interval 60 --count 120 --export both
-npm run dev -- rest request --profile example-iat --path /example --export csv --output ~/saf-results/request.csv
-npm run dev -- run --profile example-iat --request examples/request.example.yaml --export both --output ~/saf-results
+npm run dev -- rest request --profile example-profile --path /example --export csv
+npm run dev -- rest poll --profile example-profile --path /example --interval 60 --count 120 --export summary
+npm run dev -- rest poll --profile example-profile --path /example --interval 60 --count 120 --export both
+npm run dev -- rest request --profile example-profile --path /example --export csv --output ~/saf-results/request.csv
+npm run dev -- run --profile example-profile --request examples/request.example.yaml --export both --output ~/saf-results
 ```
 
 | Format | Default file under `<config-dir>/logs/` | Contents |
@@ -226,7 +226,7 @@ Exports use central redaction and exclude request payloads, headers, query value
 
 The profile fixes the environment, and each run displays it. **POST, PUT, PATCH and DELETE in PROD require `--allow-prod-write`.** The guard runs before authentication, body-file reads or network access. It cannot be disabled in application configuration.
 
-For an intentional, authorized PROD write:
+For an intentional, authorized PROD write, using a separate profile named `example-prod` configured with `environment: PROD`:
 
 ```sh
 npm run dev -- rest request --profile example-prod --method POST --path /example --body-file ~/saf-test-data/request.json --header 'Content-Type: application/json' --allow-prod-write
@@ -262,8 +262,8 @@ New log/export files use mode `0600` and new directories `0700`; existing direct
 | Local paths | `npm run dev -- config paths` |
 | Application settings | `npm run dev -- config show` |
 | List profiles | `npm run dev -- profiles list` |
-| Inspect a profile | `npm run dev -- profiles show example-iat` |
-| Validate locally | `npm run dev -- profiles validate example-iat` |
+| Inspect a profile | `npm run dev -- profiles show example-profile` |
+| Validate locally | `npm run dev -- profiles validate example-profile` |
 
 ## Troubleshooting
 
