@@ -27,7 +27,7 @@ export function pollFlags(command: Command): Command {
 }
 export async function runRequest(program: Command, options: Record<string,unknown>, redactor: Redactor, polling: boolean, templatePath?: string) {
   const paths = configPaths(program.opts().configDir as string | undefined);
-  const config = await loadConfig(paths.config); const profile = await loadProfile(paths.profiles, String(options.profile));
+  const config = await loadConfig(paths.config); const profile = await loadProfile(paths.profiles, String(options.profile), redactor);
   const template = templatePath ? await loadTemplate(templatePath) : undefined;
   const headers: Record<string,string> = {};
   for (const value of options.header as string[] ?? []) {

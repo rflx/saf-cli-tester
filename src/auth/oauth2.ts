@@ -1,5 +1,5 @@
 import type { Profile } from '../profiles/types.js';
-import { secret } from '../profiles/validator.js';
+import { oauthCredentials } from '../profiles/validator.js';
 import { httpsUrl } from '../config/schema.js';
 import { send } from '../rest/client.js';
 import type { Redactor } from '../logging/redactor.js';
@@ -12,7 +12,7 @@ export class OAuth2AuthProvider implements AuthProvider {
   constructor(private readonly auth: Extract<Profile['auth'], {mode:'oauth2'}>, private readonly redactor: Redactor, private readonly transport = send, private readonly clock = Date.now) {}
   async prepareRequest(context: RequestContext) {
     if (!this.token || this.clock() >= this.expiresAt) {
-      const id = secret(this.auth.clientIdEnv); const password = secret(this.auth.clientSecretEnv);
+      const { id, password } = oauthCredentials(this.auth);
       this.redactor.add(id); this.redactor.add(password);
       try {
         if (!this.endpoint) {

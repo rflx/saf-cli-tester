@@ -29,7 +29,7 @@ mkdir -p ~/.config/saf-cli-tester/profiles
 cp examples/profile.oauth2.example.yaml ~/.config/saf-cli-tester/profiles/example-iat.yaml
 ```
 
-Edit the copied profile with your endpoints and variable names. OAuth2 profiles reference exported environment variables for the client ID and secret; use your shell or secret manager to supply them. `.env` files are not automatically read. Never put real values in the examples or command arguments. See [profile configuration](docs/profiles.md) for OAuth2 and mTLS details.
+Edit the copied profile with your endpoints and variable names. OAuth2 profiles can store a direct client ID and secret in the external local file or reference exported environment variables; use your shell or secret manager to supply them. `.env` files are not automatically read. Never put real values in the examples or command arguments. See [profile configuration](docs/profiles.md) for OAuth2 and mTLS details.
 
 ```sh
 npm run dev -- profiles list
@@ -64,3 +64,7 @@ Logs omit request/response bodies, URL query values and arbitrary headers to avo
 All console/log output uses central recursive redaction. Tokens are cached only in memory. Real secrets, certificates, customer payloads and local profiles must remain outside Git. Review [security guidance](docs/security.md), [configuration](docs/configuration.md) and the ignore rules before using real SAF data. Before any future commit/push, inspect `git status` and `git diff --cached`.
 
 Kafka produce/consume, interactive profile creation, scenarios and comparisons are planned later; the separate auth, config, logging and statistics modules leave room for them.
+
+OAuth2 profiles accept either direct `clientId` + `clientSecret` or environment references `clientIdEnv` + `clientSecretEnv`. Both values in the selected pair are required and nonempty; mixed direct/environment fields are rejected with no precedence rule. `profiles validate` supports both variants (environment references must be exported). `profiles show` displays `clientSecret` as `[REDACTED]`; central redaction also scrubs registered direct secrets from console output, errors and JSONL diagnostics.
+
+Use direct secrets only in local profile files outside the Git repository, for example `~/.config/saf-cli-tester/profiles/example-iat.yaml`. Restrict permissions with `chmod 600 ~/.config/saf-cli-tester/profiles/example-iat.yaml`. Never put real credentials in tracked examples or CLI arguments. Environment variables or a secret manager remain supported; `.env` files are not automatically loaded.

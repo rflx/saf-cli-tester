@@ -8,9 +8,14 @@ export function secret(name: string): string {
   if (!value) throw new Error(`CONFIG_ERROR: Missing environment variable ${name}`);
   return value;
 }
+export function oauthCredentials(auth: Extract<Profile['auth'], {mode:'oauth2'}>) {
+  return auth.clientId !== undefined && auth.clientSecret !== undefined
+    ? { id: auth.clientId, password: auth.clientSecret }
+    : { id: secret(auth.clientIdEnv!), password: secret(auth.clientSecretEnv!) };
+}
 export async function validateProfile(profile: Profile): Promise<void> {
   if (profile.auth.mode === 'oauth2') {
-    secret(profile.auth.clientIdEnv); secret(profile.auth.clientSecretEnv);
+    oauthCredentials(profile.auth);
   } else {
     const passphrase = secret(profile.auth.p12PasswordEnv);
     let pfx: Buffer;
