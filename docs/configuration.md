@@ -1,0 +1,20 @@
+# Configuration
+
+The default root is `~/.config/saf-cli-tester/`, expanded using the current user's home directory. `--config-dir` overrides it. `config paths` reports `config.yaml`, `profiles/`, `secrets/`, `certificates/`, `requests/` and `logs/`. `config show` reports sanitized application defaults. Reading config does not create directories.
+
+An optional `config.yaml` supports:
+
+```yaml
+rest:
+  timeoutMs: 30000
+  headers:
+    Accept: application/json
+poll:
+  intervalSeconds: 60
+```
+
+Unknown fields are rejected. Priority is CLI arguments, template, profile, application configuration/defaults. Headers merge case-insensitively at each level. CLI body/body-file replaces a template's body source. CLI count or duration replaces the corresponding template polling bound. Both together are rejected. Environment is always taken from the profile.
+
+Request templates use `request.method`, `path`, `headers`, `body` or `bodyFile`, and `timeoutMs`. `poll` supports `intervalSeconds`, `count` or `duration`. Duration units are `ms`, `s`, `m`, `h`; fractional positive values are supported. `expect.status` specifies accepted success statuses; HTTP non-2xx remains a failure. Relative template body paths resolve beside the template; CLI body paths resolve from the working directory. `~` expansion is supported.
+
+Missing application config uses defaults; malformed/unreadable existing config fails. Profiles are named `<name>.yaml`, with names restricted to letters, numbers, `_` and `-`, starting with a letter/number. The file name must match the profile's name. Secrets come from the process environment, not automatically loaded `.env` files. Never store real payloads in tracked files.

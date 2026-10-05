@@ -1,0 +1,8 @@
+name: example-prod
+environment: PROD
+rest:
+  baseUrl: https://example.invalid
+auth:
+  mode: mtls
+  p12Path: ~/.config/saf-cli-tester/certificates/example-prod.p12
+  p12PasswordEnv: SAF_EXAMPLE_P12_PASSWORD

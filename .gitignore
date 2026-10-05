@@ -1,6 +1,17 @@
 node_modules/
 .env
 .env.*
+!.env.example
 logs/
 dist/
+dist-tests/
+coverage/
+secrets/
+certificates/
+/profiles/
+*.p12
+*.pfx
+*.key
+*.pem
+*.jsonl
 .DS_Store

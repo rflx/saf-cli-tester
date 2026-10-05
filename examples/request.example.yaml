@@ -1,0 +1,9 @@
+name: minute-poll-test
+request:
+  method: GET
+  path: /example
+poll:
+  intervalSeconds: 60
+  count: 120
+expect:
+  status: [200]
