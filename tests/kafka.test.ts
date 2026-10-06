@@ -46,9 +46,8 @@ test('Kafka profile/credential resolution is mTLS-only and preserves environment
   }
   await assert.rejects(createKafka(profile, clientId(), new Redactor()), /Cannot read/);
 });
-test('SAF group convention is advisory; missing and empty group IDs are rejected', () => {
-  for (const value of ['CG-12345-IDP123456', 'CG-123456-IDP123456']) assert.equal(validateGroupId(value), undefined);
-  for (const value of ['CG-00001-IDP5061788', 'some-group']) assert.equal(validateGroupId(value), 'Warning: consumer group ID does not match the documented SAF 1.2.0 pattern\n^CG-(\\d{5,6})-IDP(\\d{6})$\nContinuing with the supplied group ID.');
+test('Non-empty group IDs are accepted silently; missing and empty IDs are rejected', () => {
+  for (const value of ['CG-12345-IDP123456', 'CG-123456-IDP123456', 'CG-00001-IDP5061788', 'some-group', ' some-group ']) assert.equal(validateGroupId(value), undefined);
   for (const value of [undefined, '', '   ']) assert.throws(() => validateGroupId(value), /CONFIG_ERROR/);
 });
 test('UUID IDs and consume bounds validated locally', () => {
@@ -56,7 +55,7 @@ test('UUID IDs and consume bounds validated locally', () => {
   assert.throws(() => clientId('profile-name'), /UUID/);
   for (const options of [{ topic }, { topic, count: 0 }, { topic, count: 1.5 }, { topic: '../topic', count: 1 }, { topic, durationMs: Infinity }]) assert.throws(() => validateConsume(options), /CONFIG_ERROR/);
 });
-test('Kafka consume CLI warns only on SAF deviations and passes group IDs unchanged', async () => {
+test('Kafka consume CLI accepts group IDs without warnings and passes them unchanged', async () => {
   const root = await mkdtemp(join(tmpdir(), 'saf-kafka-groups-'));
   const originalPrepare = MtlsAuthProvider.prototype.prepareRequest;
   const originalConsumer = Kafka.prototype.consumer;
@@ -80,13 +79,14 @@ test('Kafka consume CLI warns only on SAF deviations and passes group IDs unchan
       assert.ok(!output.join('\n').includes('customer-name'));
       assert.ok(!output.join('\n').includes('arbitrary-secret'));
       const warnings = output.filter(value => value.startsWith('Warning:'));
-      assert.deepEqual(warnings, groupId === 'CG-12345-IDP123456' ? [] : [validateGroupId(groupId)]);
+      assert.deepEqual(warnings, []);
       assert.equal(process.exitCode, previousExit);
     }
     output.length = 0;
     const payloadProgram = new Command().option('--config-dir <path>', '', root);
     kafkaCommands(payloadProgram, new Redactor());
     await payloadProgram.parseAsync(['kafka', 'consume', '--profile', 'kafka-test', '--topic', topic, '--group-id', 'CG-12345-IDP123456', '--count', '2', '--include-payload', '--export', 'both', '--output', join(root, 'exports')], { from: 'user' });
+    assert.deepEqual(output.filter(line => line.startsWith('Warning:')), []);
     assert.equal(output.filter(line => line.startsWith('Payload:\n')).length, 2);
     assert.equal(output.filter(line => line.startsWith('\nTopic:')).length, 2);
     assert.match(output.join('\n'), /  "data": "test"/);

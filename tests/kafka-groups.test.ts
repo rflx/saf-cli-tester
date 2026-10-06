@@ -46,7 +46,7 @@ test('CLI group inspection and consume mismatch use redacted logs and preserve g
   MtlsAuthProvider.prototype.prepareRequest = async () => ({ headers: {}, tls: { pfx: Buffer.from('fake'), passphrase: 'profile-secret' } });
   Kafka.prototype.admin = function () { return { connect: async () => {}, disconnect: async () => {}, describeGroups: async (ids: string[]) => {
     supplied.push(...ids); if (failure) throw failure;
-    const result = group(state); if (result.members.length) result.members[0]!.clientHost = 'profile-secret';
+    const result = { ...group(state), groupId: ids[0]! }; if (result.members.length) result.members[0]!.clientHost = 'profile-secret';
     return { groups: [result] };
   } } as ReturnType<Kafka['admin']>; };
   Kafka.prototype.consumer = function (options) {
@@ -57,12 +57,12 @@ test('CLI group inspection and consume mismatch use redacted logs and preserve g
   try {
     await mkdir(join(root, 'profiles'));
     await writeFile(join(root, 'profiles/test.yaml'), JSON.stringify({ name: 'test', environment: 'IAT', credentials: { mtls: { p12Path: '/fake.p12', p12Password: 'profile-secret' } }, kafka: { brokers: ['broker.invalid:9092'], auth: { mode: 'mtls', credential: 'mtls' } } }));
-    async function run(command: string) {
+    async function run(command: string, suppliedGroupId = groupId) {
       output.length = 0; process.exitCode = undefined;
       const program = new Command().option('--config-dir <path>', '', root); kafkaCommands(program, new Redactor());
-      await program.parseAsync(['kafka', command, '--profile', 'test', '--group-id', groupId, ...(command === 'consume' ? ['--topic', 'topic', '--count', '1'] : [])], { from: 'user' });
-      assert.equal(supplied.at(-1), groupId);
-      assert.match(output.join('\n'), /Continuing with the supplied group ID/);
+      await program.parseAsync(['kafka', command, '--profile', 'test', '--group-id', suppliedGroupId, ...(command === 'consume' ? ['--topic', 'topic', '--count', '1'] : [])], { from: 'user' });
+      assert.equal(supplied.at(-1), suppliedGroupId);
+      assert.deepEqual(output.filter(line => line.startsWith('Warning:')), []);
       assert.ok(!output.join('\n').includes('profile-secret'));
     }
     await run('group-describe'); assert.equal(process.exitCode, undefined);
@@ -78,6 +78,10 @@ test('CLI group inspection and consume mismatch use redacted logs and preserve g
       assert.match(output.join('\n'), /RoundRobinAssigner/);
     }
     assert.deepEqual(supplied, Array(6).fill(groupId));
+    failure = undefined; state = 'Stable';
+    for (const id of ['arbitrary-group', ' arbitrary-group ']) await run('group-describe', id);
+    for (const id of ['', '   ']) await assert.rejects(run('group-describe', id), /CONFIG_ERROR/);
+    assert.deepEqual(supplied.slice(6), ['arbitrary-group', ' arbitrary-group ']);
     const records: Record<string, unknown>[] = [];
     for (const file of await readdir(join(root, 'logs'))) {
       const content = await readFile(join(root, 'logs', file), 'utf8');

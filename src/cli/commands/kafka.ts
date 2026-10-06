@@ -29,8 +29,7 @@ export function kafkaCommands(program: Command, redactor: Redactor) {
       const consumeOptions = { topic: String(options.topic), count: options.count as number | undefined,
         durationMs: options.duration === undefined ? undefined : durationMs(String(options.duration)), fromBeginning: options.fromBeginning === true };
       if (name !== 'connection-test') {
-        const warning = validateGroupId(options.groupId as string | undefined);
-        if (warning) new Logger(redactor).console(warning);
+        validateGroupId(options.groupId as string | undefined);
       }
       if (name === 'consume') {
         validateConsume(consumeOptions);
@@ -51,7 +50,6 @@ export function kafkaCommands(program: Command, redactor: Redactor) {
       try {
         logger.console(`Profile: ${profile.name}\nEnvironment: ${profile.environment}\nKafka broker: ${profile.kafka?.brokers.join(', ')}\nAuthentication: mTLS\nClient UUID: ${id}\nRun ID: ${runId}\nLog: ${paths.logs}/${runId}.jsonl`);
         await logger.record({ timestamp: startTime, ...metadata, operation: name, payloadLogging: options.includePayload ? 'bounded-json' : 'metadata-only', result: 'started' });
-        if (options.includePayload) logger.console('Warning: SAF event payloads may contain sensitive customer/business data. Payload diagnostics are stored locally.');
         const client = await createKafka(profile, id, redactor);
         if (name === 'connection-test') {
           await connectionTest(client.admin());
