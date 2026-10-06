@@ -48,7 +48,7 @@ export interface RequestResult {
   responseDiagnosticsFailed?: boolean;
   configurationError?: string;
 }
-export async function executeRequest(auth: AuthProvider, request: ReturnType<typeof resolveRequest>, signal?: AbortSignal, expected?: number[], redactor = new Redactor()): Promise<RequestResult> {
+export async function executeRequest(auth: AuthProvider, request: ReturnType<typeof resolveRequest>, signal?: AbortSignal, expected?: number[], redactor = new Redactor(), consoleResponse?: (body: string | undefined) => void): Promise<RequestResult> {
   const started = performance.now();
   try {
     const parsedBody = templateBody(request.body);
@@ -63,7 +63,8 @@ export async function executeRequest(auth: AuthProvider, request: ReturnType<typ
     const body = runtime.body === undefined ? undefined
       : jsonText ? JSON.stringify(runtime.body) === JSON.stringify(parsedBody) ? request.body as string : JSON.stringify(runtime.body)
       : typeof runtime.body === 'string' ? runtime.body : JSON.stringify(runtime.body);
-    const response = await send(request.url, request.method, { ...runtime.headers, ...prepared.headers }, body, request.timeoutMs, prepared.tls, signal, request.diagnosticBodyMaxBytes);
+    const response = await send(request.url, request.method, { ...runtime.headers, ...prepared.headers }, body, request.timeoutMs, prepared.tls, signal, request.diagnosticBodyMaxBytes, consoleResponse !== undefined);
+    if (consoleResponse) consoleResponse(response.consoleBodyUnavailable ? undefined : response.consoleBody);
     const errorType = classifyStatus(response.status) ?? (expected && !expected.includes(response.status) ? 'UNEXPECTED_STATUS' : undefined);
     let diagnostics = {};
     if (response.status >= 400 && response.status <= 599) {

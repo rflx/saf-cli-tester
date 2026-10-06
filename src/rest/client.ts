@@ -2,18 +2,24 @@ import http, { type IncomingHttpHeaders } from 'node:http';
 import https from 'node:https';
 import type { ConnectionOptions } from 'node:tls';
 
-export interface HttpResponse { status: number; headers: IncomingHttpHeaders; body: string; durationMs: number; bodyTruncated?: boolean; diagnosticReadFailed?: boolean }
-export function send(url: URL, method: string, headers: Record<string,string>, body: string | undefined, timeoutMs: number, tls: ConnectionOptions = {}, signal?: AbortSignal, diagnosticBodyMaxBytes?: number): Promise<HttpResponse> {
+export interface HttpResponse { status: number; headers: IncomingHttpHeaders; body: string; durationMs: number; bodyTruncated?: boolean; diagnosticReadFailed?: boolean; consoleBody?: string; consoleBodyUnavailable?: boolean }
+export function send(url: URL, method: string, headers: Record<string,string>, body: string | undefined, timeoutMs: number, tls: ConnectionOptions = {}, signal?: AbortSignal, diagnosticBodyMaxBytes?: number, captureConsoleBody = false): Promise<HttpResponse> {
   return new Promise((resolve, reject) => {
     const start = performance.now();
     let diagnosticFailure: (() => void) | undefined;
     const request = (url.protocol === 'https:' ? https : http).request(url, { ...tls, method, headers, signal, rejectUnauthorized: true }, response => {
+      const consoleChunks: Buffer[] = []; let consoleSize = 0; let consoleTruncated = false;
       const chunks: Buffer[] = []; let size = 0; let truncated = false;
       const diagnostic = diagnosticBodyMaxBytes !== undefined && (response.statusCode ?? 0) >= 400 && (response.statusCode ?? 0) <= 599;
       const limit = diagnostic ? diagnosticBodyMaxBytes : 1024 * 1024;
-      const finish = (failed = false) => resolve({ status: response.statusCode ?? 0, headers: response.headers, body: failed ? '' : Buffer.concat(chunks).toString('utf8'), durationMs: performance.now() - start, ...(diagnostic ? { bodyTruncated: truncated, diagnosticReadFailed: failed } : {}) });
+      const finish = (failed = false) => resolve({ status: response.statusCode ?? 0, headers: response.headers, body: failed ? '' : Buffer.concat(chunks).toString('utf8'), durationMs: performance.now() - start, ...(captureConsoleBody ? { consoleBody: failed || consoleTruncated ? undefined : Buffer.concat(consoleChunks).toString('utf8'), consoleBodyUnavailable: failed || consoleTruncated } : {}), ...(diagnostic ? { bodyTruncated: truncated, diagnosticReadFailed: failed } : {}) });
       if (diagnostic) diagnosticFailure = () => finish(true);
       response.on('data', (chunk: Buffer) => {
+        if (captureConsoleBody) {
+          consoleSize += chunk.length;
+          if (consoleSize > 1024 * 1024) { consoleTruncated = true; consoleChunks.length = 0; }
+          else if (!consoleTruncated) consoleChunks.push(chunk);
+        }
         if (diagnostic) {
           const remaining = Math.max(0, limit! - size);
           if (chunk.length > remaining) truncated = true;

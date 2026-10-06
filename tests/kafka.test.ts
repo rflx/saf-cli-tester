@@ -75,14 +75,36 @@ test('Kafka consume CLI warns only on SAF deviations and passes group IDs unchan
       kafkaCommands(program, new Redactor());
       await program.parseAsync(['kafka', 'consume', '--profile', 'kafka-test', '--topic', topic, '--group-id', groupId, '--count', '1'], { from: 'user' });
       assert.equal(supplied.at(-1), groupId);
+      assert.ok(output.includes('Payload: hidden'));
+      assert.ok(output.some(line => line.includes('Partition: 2\nOffset: 1\nTimestamp: 1700000000000')));
+      assert.ok(!output.join('\n').includes('customer-name'));
+      assert.ok(!output.join('\n').includes('arbitrary-secret'));
       const warnings = output.filter(value => value.startsWith('Warning:'));
       assert.deepEqual(warnings, groupId === 'CG-12345-IDP123456' ? [] : [validateGroupId(groupId)]);
       assert.equal(process.exitCode, previousExit);
     }
+    output.length = 0;
+    const payloadProgram = new Command().option('--config-dir <path>', '', root);
+    kafkaCommands(payloadProgram, new Redactor());
+    await payloadProgram.parseAsync(['kafka', 'consume', '--profile', 'kafka-test', '--topic', topic, '--group-id', 'CG-12345-IDP123456', '--count', '2', '--include-payload', '--export', 'both', '--output', join(root, 'exports')], { from: 'user' });
+    assert.equal(output.filter(line => line.startsWith('Payload:\n')).length, 2);
+    assert.equal(output.filter(line => line.startsWith('\nTopic:')).length, 2);
+    assert.match(output.join('\n'), /  "data": "test"/);
+    assert.ok(!output.join('\n').includes('kafka-secret'));
+    const fs = await import('node:fs/promises');
+    const logs = await fs.readdir(join(root, 'logs'));
+    let payloadRecords = 0;
+    for (const file of logs) {
+      const content = await readFile(join(root, 'logs', file), 'utf8');
+      assert.ok(!content.includes('kafka-secret'));
+      payloadRecords += content.split('\n').filter(line => line && JSON.parse(line).payload).length;
+    }
+    assert.equal(payloadRecords, 2);
+    for (const file of await fs.readdir(join(root, 'exports'))) assert.ok(!(await readFile(join(root, 'exports', file), 'utf8')).includes('"data"'));
     const program = new Command().option('--config-dir <path>', '', root);
     kafkaCommands(program, new Redactor());
     await assert.rejects(program.parseAsync(['kafka', 'consume', '--profile', 'kafka-test', '--topic', topic, '--group-id', '', '--count', '1'], { from: 'user' }), /CONFIG_ERROR/);
-    assert.equal(supplied.length, 4);
+    assert.equal(supplied.length, 5);
   } finally {
     MtlsAuthProvider.prototype.prepareRequest = originalPrepare;
     Kafka.prototype.consumer = originalConsumer;

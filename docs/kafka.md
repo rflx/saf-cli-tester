@@ -22,8 +22,23 @@ At least one bound is required: `--count <positive integer>` or `--duration <dur
 
 Arbitrary valid Kafka topic names are accepted. SAF OUT topics include `eh.saf.{ecohubId}.offer.nlpi.out.v1`, `commission.out.v1`, `invoice.out.v1`, `contract.out.v1`, `mandate.out.v1`, `claimsExperience.out.v1`, `claimsExperience.nlpi.out.v1`, `generic.out.v1` and `ids.out.v1` under the same `eh.saf.{ecohubId}.` prefix.
 
-Local JSONL uses the existing run-ID model, records timestamp/profile/environment/topic/partition/string offset/groupId/consumerGroupId/clientId, Kafka timestamp, value size and result. `messageKey` is null or size metadata to avoid exposing customer identifiers. Arbitrary headers are omitted. Console output contains run metadata and totals, never message bodies. By default payload logging is metadata-only. `--include-payload` opts into bounded UTF-8 JSON object/array diagnostics in the local JSONL only, through central redaction, with a sensitive-data warning. `--max-payload-bytes` defaults to 65536 and permits 1–1048576; oversized, binary and non-JSON values are represented by omission markers. Redaction cannot identify every kind of business/customer data: protect local diagnostics accordingly.
+Local JSONL uses the existing run-ID model, records timestamp/profile/environment/topic/partition/string offset/groupId/consumerGroupId/clientId, Kafka timestamp, value size and result. `messageKey` is null or size metadata to avoid exposing customer identifiers. Arbitrary headers are omitted. Console output contains run metadata, per-message topic/partition/offset/Kafka timestamp, key size, value size and totals. Payloads display `Payload: hidden` by default. By default payload logging is metadata-only. `--include-payload` also retains its existing opt-in to bounded UTF-8 JSON object/array diagnostics in local JSONL, through central redaction, with a sensitive-data warning. `--max-payload-bytes` defaults to 65536 and permits 1–1048576; oversized, binary and non-JSON values are represented by omission markers. Redaction cannot identify every kind of business/customer data: protect local diagnostics accordingly.
 
 `--export csv|summary|both` and `--output` reuse REST export path rules. CSV contains metadata only, including UUID clientId, never keys, headers or payloads. Summary exports contain Kafka totals (messages, value bytes, partitions, errors, seconds and messages/sec), without HTTP status fields. JSONL and exports use restrictive file permissions and central redaction. KafkaJS internal logging is disabled to keep raw errors/configuration out of diagnostics. Errors are classified as CONFIG_ERROR or KAFKA_CONNECTION_ERROR, KAFKA_AUTH_ERROR, KAFKA_TLS_ERROR, KAFKA_TIMEOUT, KAFKA_TOPIC_AUTHORIZATION_ERROR, KAFKA_GROUP_AUTHORIZATION_ERROR, KAFKA_UNKNOWN_TOPIC, retaining redacted error messages without stack traces.
 
 Schema Registry is not required or called. The specification lists IAT `https://services.test-myecohub.ch/schemaregistry` and PROD `https://services.myecohub.ch/schemaregistry`; envelope/schema decoding is deferred. Consuming a Kafka record confirms transport receipt only. This milestone does not implement producing, SAF payload encryption/decryption, signature generation/validation, business interpretation or automatic TechUser enrolment. Tests use mocks and local fixtures; no real EcoHub brokers are contacted.
+
+## Viewing consumed payloads
+
+```sh
+npm run dev -- kafka consume --profile <profile-name> \
+  --topic <topic> --group-id <group-id> --duration 1m --include-payload
+npm run dev -- kafka consume --profile <profile-name> \
+  --topic <topic> --group-id <group-id> --count 5 --include-payload
+```
+
+`--include-payload` prints each consumed value after its metadata, with blank lines separating messages. Valid UTF-8 JSON uses two-space indentation and preserves arrays/nested objects; other UTF-8 text prints as plain text. Invalid UTF-8 or binary control bytes display `Payload: <binary, N bytes>`, without raw bytes or Base64. Null values display `<null>` and zero-length values `<empty>`. Formatting does not mutate consumed data.
+
+Central redaction applies to both console JSON/text and persistent diagnostics, including registered shared, OAuth2 and mTLS secrets. Keys remain null/byte-size metadata and headers remain omitted. The flag does not expose header or key content, alter group behavior or change offset semantics. The timestamp retains Kafka's original millisecond string.
+
+For backward compatibility this flag controls both console display and bounded JSON object/array inclusion in JSONL. `--max-payload-bytes` limits persistent diagnostics only; console text/JSON displays the complete received value. Text and binary payloads remain omission markers in JSONL, and CSV/summary exports still exclude payloads. REST uses `--show-response`; Kafka consumes messages and deliberately uses `--include-payload`, with no `--show-response` alias.

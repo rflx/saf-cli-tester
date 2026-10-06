@@ -1,3 +1,4 @@
+import { kafkaPayloadOutput } from '../../logging/payload.js';
 import { randomUUID } from 'node:crypto';
 import type { Command } from 'commander';
 import { configPaths } from '../../config/paths.js';
@@ -19,7 +20,7 @@ export function kafkaCommands(program: Command, redactor: Redactor) {
     if (name === 'consume') command.requiredOption('--topic <topic>', 'SAF OUT topic').requiredOption('--group-id <id>', 'SAF consumer group ID')
       .option('--count <n>', 'Maximum records', Number).option('--duration <duration>', 'Maximum run duration, e.g. 10m')
       .option('--from-beginning', 'Read earliest available offsets for a new group')
-      .option('--include-payload', 'Log bounded JSON payloads locally; may contain sensitive customer data')
+      .option('--include-payload', 'Print consumed Kafka message payloads to the terminal (secret redaction); also log bounded JSON locally')
       .option('--max-payload-bytes <n>', 'Maximum payload diagnostic size (1–1048576)', Number, 65536);
     command.action(async (options: Record<string, unknown>) => {
       const id = clientId(options.clientId as string | undefined);
@@ -55,6 +56,8 @@ export function kafkaCommands(program: Command, redactor: Redactor) {
           const record = { timestamp: new Date().toISOString(), ...metadata, ...messageDiagnostic(message, options.includePayload === true, Number(options.maxPayloadBytes), redactor) };
           await logger.record(record); await exports?.record(record);
           stats.add(message.partition, message.message.value?.length ?? 0);
+          logger.console(`\nTopic: ${message.topic}\nPartition: ${message.partition}\nOffset: ${message.message.offset}\nTimestamp: ${message.message.timestamp}\nKey: ${message.message.key === null ? '<null>' : `<${message.message.key.length} bytes>`}\nSize: ${message.message.value?.length ?? 0} bytes`);
+          logger.console(options.includePayload === true ? kafkaPayloadOutput(message.message.value, redactor) : 'Payload: hidden');
         });
       } catch (error) {
         failure = error; stats.errors++;

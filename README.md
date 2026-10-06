@@ -273,6 +273,34 @@ rest:
 
 For legacy mTLS, move `p12Path` and `p12PasswordEnv` into `credentials.mtls` and set `rest.auth` to `mode: mtls`, `credential: mtls`.
 
+## Viewing payloads
+
+Payload output is disabled by default and always subject to central secret redaction.
+REST `--show-response` shows the HTTP response body in the terminal only.
+Native Kafka `--include-payload` shows consumed message payloads; it also retains the existing bounded JSON payload logging contract. CSV and summary exports remain metadata-only.
+
+```sh
+npm run dev -- rest request \
+  --profile <profile-name> \
+  --method GET \
+  --path /some/path \
+  --show-response
+
+npm run dev -- run \
+  --profile <profile-name> \
+  --request templates/general-api/saf-receivers.yaml \
+  --show-response
+
+npm run dev -- kafka consume \
+  --profile <profile-name> \
+  --topic <topic> \
+  --group-id <group-id> \
+  --duration 1m \
+  --include-payload
+```
+
+See [REST output](docs/rest-testing.md) and [Kafka output](docs/kafka.md) for formatting, limits and logging behavior. Replace placeholders with your own values.
+
 ## REST Requests
 
 The method defaults to `GET`. Supported methods are `GET`, `HEAD`, `OPTIONS`, `POST`, `PUT`, `PATCH` and `DELETE`.
@@ -352,7 +380,7 @@ Export these variables through your shell or secret manager. See [runtime templa
 
 Every run writes `<config-dir>/logs/<runId>.jsonl`. Request records include timestamps, sequence number, profile/environment, method/path, status when available, duration, request/correlation IDs when available, and classified failures. The final summary reports request and success counts, 4xx/5xx/500/timeout counts, success and 5xx rates, and min/average/p50/p95/max latency. Percentiles use nearest rank.
 
-HTTP **4xx/5xx** records also capture sanitized JSON/text response diagnostics and allowlisted response identifiers. Request bodies, query values and arbitrary headers are omitted; successful response bodies are not logged. The console does not print response bodies.
+HTTP **4xx/5xx** records also capture sanitized JSON/text response diagnostics and allowlisted response identifiers. Request bodies, query values and arbitrary headers are omitted; successful response bodies are not logged. The console prints response bodies only with `--show-response`.
 
 Error-body capture defaults to **64 KiB**. Set `rest.diagnosticBodyMaxBytes` in local `config.yaml` to an integer from 0 to 1048576 bytes. Truncated bodies are marked and their content omitted to avoid partial-secret leaks. Empty and binary bodies contain metadata only. Diagnostic read/processing failures preserve the original HTTP classification.
 

@@ -28,3 +28,16 @@ npm run dev -- run --profile <profile-name> --request examples/saf-insurers.yaml
 Both use top-level licenceKey/password body fields, generated requestId/requestTime and userAgent. They work with REST OAuth2 or mTLS and omit onBehalfOf. To poll, add an explicit interval and count/duration; PROD writes require `--allow-prod-write`.
 
 Both shared fields and resolved environment values are registered as secrets, including encoded forms. Profile display, console/errors, JSONL, CSV and summary exports use central redaction, including echoed OAuth/REST server content. Request payloads remain excluded from diagnostics and exports. Keep actual profiles, credentials and payloads outside Git.
+
+## Viewing template results
+
+General API response bodies are often the primary result. Opt in to redacted console output:
+
+```sh
+npm run dev -- run \
+  --profile <profile-name> \
+  --request templates/general-api/saf-receivers.yaml \
+  --show-response
+```
+
+The flag applies to single requests and every template polling iteration, without adding response bodies to logs or exports. See [REST output](rest-testing.md).

@@ -1,3 +1,4 @@
+import { payloadOutput } from '../../logging/payload.js';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import type { Command } from 'commander';
@@ -23,6 +24,7 @@ export function requestFlags(command: Command): Command {
     .option('--path <path>', 'Origin-relative path').option('--body <body>', 'Request body').option('--body-file <file>', 'Local body file')
     .option('--header <header>', 'Header: value (repeatable)', (value: string, previous: string[]) => [...previous, value], [])
     .option('--timeout <ms>', 'Request timeout in milliseconds', Number).option('--allow-prod-write', 'Permit writes to PROD')
+    .option('--show-response', 'Print the HTTP response body to the terminal (subject to secret redaction)')
     .option('--export <format>', 'Export csv, summary or both', exportFormat).option('--output <path>', 'Export file (single format) or directory (both)');
 }
 export function pollFlags(command: Command): Command {
@@ -67,14 +69,18 @@ export async function runRequest(program: Command, options: Record<string,unknow
     logger.console(`Profile: ${profile.name}\nEnvironment: ${profile.environment}\nRun ID: ${runId}\nLog: ${paths.logs}/${runId}.jsonl`);
     if (exports) logger.console(`Exports: ${exports.files.join(', ')}`);
     const task = async (sequenceNumber: number) => {
-      const timestamp = new Date().toISOString(); const result = await executeRequest(auth, request, controller.signal, template?.expect?.status, redactor);
+      let responseBody: string | undefined;
+      let responseReceived = false;
+      const timestamp = new Date().toISOString(); const result = await executeRequest(auth, request, controller.signal, template?.expect?.status, redactor, options.showResponse === true ? body => { responseReceived = true; responseBody = body; } : undefined);
       stats.add(result);
       if (result.configurationError) logger.error(result.configurationError);
       // URL query values and request payloads are deliberately omitted from persisted diagnostics.
       const record = { timestamp, runId, sequenceNumber, profile: profile.name, environment: profile.environment, method: request.method, path: request.url.pathname, ...result };
       await logger.record(record);
       await exports?.record(record);
+      if (options.showResponse === true) logger.console(`\n[${timestamp}] Request #${sequenceNumber}`);
       logger.console(`${timestamp} #${sequenceNumber} ${request.method} ${request.url.pathname} ${result.statusCode ?? result.errorType} ${result.durationMs.toFixed(2)} ms ${result.result}`);
+      if (responseReceived) logger.console(responseBody === undefined ? 'Response: <unavailable: read failure or 1 MiB console limit>' : payloadOutput('Response', responseBody, redactor));
     };
     if (shouldPoll) await poll(task, { intervalMs: (pollOptions.intervalSeconds ?? config.poll.intervalSeconds)*1000, count: pollOptions.count, durationMs: duration, signal: controller.signal });
     else await task(1);

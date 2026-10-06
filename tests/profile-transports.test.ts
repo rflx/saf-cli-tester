@@ -120,7 +120,10 @@ test('local P12 validation and real HTTPS REST requests with OAuth2 and mTLS', a
         }
         if (mode === 'mtls') assert.equal((req.socket as import('node:tls').TLSSocket).authorized, true);
         else assert.equal(req.headers.authorization, 'Bearer local-token');
-        res.writeHead(200); res.end('ok');
+        if (req.url === '/404' || req.url === '/500') {
+          res.writeHead(Number(req.url.slice(1)), { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ message: 'failure-body-unique', echoed: oauth2.clientSecret }));
+        } else { res.writeHead(200); res.end('console-body-unique'); }
       });
       server.listen(0, 'localhost'); await once(server, 'listening');
       try {
@@ -141,10 +144,30 @@ test('local P12 validation and real HTTPS REST requests with OAuth2 and mTLS', a
         const template = join(dir, `${mode}.yaml`);
         await writeFile(template, JSON.stringify({ request: { path: '/', timeoutMs: 1000 }, poll: { count: 2, intervalSeconds: 0.001 } }));
         const cli = fileURLToPath(new URL('../src/cli/index.js', import.meta.url));
+        for (const status of [404, 500]) {
+          for (const show of [false, true]) {
+            await assert.rejects(exec(process.execPath, [cli, '--config-dir', configDir, 'rest', 'request', '--path', `/${status}`, '--profile', identity.name, ...(show ? ['--show-response'] : [])], { env: { ...process.env, NODE_EXTRA_CA_CERTS: certPath } }), error => {
+              const failed = error as { code: number; stdout: string };
+              assert.equal(failed.code, 1);
+              assert.equal(failed.stdout.includes('failure-body-unique'), show);
+              assert.ok(!failed.stdout.includes(oauth2.clientSecret));
+              assert.match(failed.stdout, new RegExp(`GET /${status} ${status}`));
+              return true;
+            });
+          }
+        }
         for (const args of [['rest', 'request', '--path', '/'], ['rest', 'poll', '--path', '/', '--count', '2', '--interval', '0.001'], ['run', '--request', template]]) {
           const output = join(configDir, `export-${args[0]}-${args[1]}`);
           const completed = await exec(process.execPath, [cli, '--config-dir', configDir, ...args, '--profile', identity.name, '--export', 'both', '--output', output], { env: { ...process.env, NODE_EXTRA_CA_CERTS: certPath } });
           assert.match(completed.stdout, /Successful: [12]/);
+          assert.ok(!completed.stdout.includes('console-body-unique'));
+          const shown = await exec(process.execPath, [cli, '--config-dir', configDir, ...args, '--profile', identity.name, '--show-response'], { env: { ...process.env, NODE_EXTRA_CA_CERTS: certPath } });
+          const expectedCount = args[1] === 'request' ? 1 : 2;
+          assert.equal((shown.stdout.match(/Response:\nconsole-body-unique/g) ?? []).length, expectedCount);
+          assert.match(shown.stdout, /Request #1/);
+          if (expectedCount === 2) assert.match(shown.stdout, /\n\[.*\] Request #2/);
+          const logs = await import('node:fs/promises').then(fs => fs.readdir(join(configDir, 'logs')));
+          for (const log of logs.filter(name => name.endsWith('.jsonl'))) assert.ok(!(await readFile(join(configDir, 'logs', log), 'utf8')).includes('console-body-unique'));
           for (const secret of [oauth2.clientSecret, mtls.p12Password, 'local-token']) assert.ok(!completed.stdout.includes(secret));
         }
       } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
