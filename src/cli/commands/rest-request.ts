@@ -69,6 +69,7 @@ export async function runRequest(program: Command, options: Record<string,unknow
     const task = async (sequenceNumber: number) => {
       const timestamp = new Date().toISOString(); const result = await executeRequest(auth, request, controller.signal, template?.expect?.status, redactor);
       stats.add(result);
+      if (result.configurationError) logger.error(result.configurationError);
       // URL query values and request payloads are deliberately omitted from persisted diagnostics.
       const record = { timestamp, runId, sequenceNumber, profile: profile.name, environment: profile.environment, method: request.method, path: request.url.pathname, ...result };
       await logger.record(record);

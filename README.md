@@ -281,6 +281,26 @@ npm run dev -- run --profile example-profile --request examples/request.example.
 
 Omit `poll` for a single request. `request` accepts `method`, `path`, `headers`, `body` or `bodyFile`, and `timeoutMs`. `poll` accepts `intervalSeconds` and exactly one of `count` or `duration`. Optional `expect.status` narrows accepted 2xx statuses; other 2xx responses become `UNEXPECTED_STATUS`. Non-2xx responses remain failures even if listed.
 
+Body strings, nested objects, arrays and permitted header values support `{{uuid}}`, `{{nowUtc}}` and `{{env:VARIABLE_NAME}}`. Each request, including every poll iteration, receives a new UUID and a current UTC timestamp immediately before HTTP execution. Missing/empty variables, unknown placeholders and malformed placeholders fail with `CONFIG_ERROR`. Environment values pass through central secret redaction; request bodies remain excluded from logs and exports. No code or shell expressions are evaluated.
+
+General API body example (use the resource path and payload contract for your deployment):
+
+```yaml
+request:
+  method: POST
+  path: /replace-with-general-api-path
+  headers:
+    Content-Type: application/json
+  body:
+    requestId: "{{uuid}}"
+    requestTime: "{{nowUtc}}"
+    credentials:
+      licenceKey: "{{env:SAF_GENERAL_LICENCE_KEY}}"
+      password: "{{env:SAF_GENERAL_PASSWORD}}"
+```
+
+Export these variables through your shell or secret manager. See [runtime template details](docs/requests.md) and the [General API example](examples/request.general.example.yaml).
+
 `run` accepts the REST request and polling flags. CLI settings override templates; an explicit CLI body source replaces the template body source, and CLI count or duration replaces the template bound. Relative template `bodyFile` paths resolve beside the template; CLI body-file paths resolve from the working directory. `~/` paths are supported.
 
 ## Diagnostics
