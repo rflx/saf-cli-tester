@@ -8,15 +8,17 @@ import type { Redactor } from '../../logging/redactor.js';
 import { openLog } from '../../logging/jsonl.js';
 import { RunExports, exportFormat } from '../../logging/exports.js';
 import { durationMs } from '../../rest/poller.js';
-import { clientId, connectionTest, consume, createKafka, kafkaError, validateConsume, validateGroupId } from '../../kafka/client.js';
+import { clientId, connectionTest, consume, createKafka, kafkaError, validateConsume, validateGroupId, describeGroup, groupDescriptionOutput, groupProtocolDiagnostic, consumerAssignors } from '../../kafka/client.js';
 import { KafkaStats, kafkaCsvFields, messageDiagnostic } from '../../kafka/diagnostics.js';
 
 export function kafkaCommands(program: Command, redactor: Redactor) {
   const kafka = program.command('kafka').description('Native SAF Kafka transport diagnostics (mTLS only)');
-  for (const name of ['connection-test', 'consume']) {
+  for (const name of ['connection-test', 'consume', 'group-describe']) {
     const command = kafka.command(name).requiredOption('--profile <name>', 'TechUser profile')
       .option('--client-id <uuid>', 'Kafka UUID client ID (generated when omitted)')
       .option('--export <format>', 'csv, summary or both', exportFormat).option('--output <path>', 'Export file or directory');
+    if (name === 'group-describe') command.description('Describe an existing Kafka consumer group and its active members.').requiredOption('--group-id <id>', 'Existing consumer group ID');
+    if (name === 'consume') command.addHelpText('after', '\nIf joining an existing group fails because of a protocol mismatch, use kafka group-describe to inspect the group.');
     if (name === 'consume') command.requiredOption('--topic <topic>', 'SAF OUT topic').requiredOption('--group-id <id>', 'SAF consumer group ID')
       .option('--count <n>', 'Maximum records', Number).option('--duration <duration>', 'Maximum run duration, e.g. 10m')
       .option('--from-beginning', 'Read earliest available offsets for a new group')
@@ -26,9 +28,11 @@ export function kafkaCommands(program: Command, redactor: Redactor) {
       const id = clientId(options.clientId as string | undefined);
       const consumeOptions = { topic: String(options.topic), count: options.count as number | undefined,
         durationMs: options.duration === undefined ? undefined : durationMs(String(options.duration)), fromBeginning: options.fromBeginning === true };
-      if (name === 'consume') {
+      if (name !== 'connection-test') {
         const warning = validateGroupId(options.groupId as string | undefined);
         if (warning) new Logger(redactor).console(warning);
+      }
+      if (name === 'consume') {
         validateConsume(consumeOptions);
         if (!Number.isSafeInteger(options.maxPayloadBytes) || Number(options.maxPayloadBytes) < 1 || Number(options.maxPayloadBytes) > 1048576) throw new Error('CONFIG_ERROR: Invalid maximum payload bytes');
       }
@@ -36,7 +40,8 @@ export function kafkaCommands(program: Command, redactor: Redactor) {
       const profile = await loadProfile(paths.profiles, String(options.profile), redactor);
       const runId = randomUUID(), startTime = new Date().toISOString();
       const metadata = { runId, profile: profile.name, environment: profile.environment, transport: 'kafka', clientId: id,
-        ...(name === 'consume' ? { topic: consumeOptions.topic, groupId: String(options.groupId), consumerGroupId: String(options.groupId) } : {}) };
+        ...(name !== 'connection-test' ? { groupId: String(options.groupId) } : {}),
+        ...(name === 'consume' ? { topic: consumeOptions.topic, consumerGroupId: String(options.groupId) } : {}) };
       const exports = await RunExports.open(exportFormat(options.export), options.output as string | undefined, paths.logs, runId, redactor, kafkaCsvFields);
       let logger: Logger;
       try { logger = new Logger(redactor, await openLog(paths.logs, runId)); } catch (error) { await exports?.close(); throw error; }
@@ -52,6 +57,10 @@ export function kafkaCommands(program: Command, redactor: Redactor) {
           await connectionTest(client.admin());
           await logger.record({ timestamp: new Date().toISOString(), ...metadata, result: 'success' });
           logger.console('TLS: OK\nKafka connection: OK\nBroker metadata: OK\n\nConnection test successful.');
+        } else if (name === 'group-describe') {
+          const group = await describeGroup(client.admin(), String(options.groupId));
+          logger.console(groupDescriptionOutput(group));
+          await logger.record({ timestamp: new Date().toISOString(), ...metadata, operation: name, ...group, result: 'success' });
         } else await consume(client.consumer({ groupId: String(options.groupId) }), { ...consumeOptions, signal: controller.signal }, async message => {
           const record = { timestamp: new Date().toISOString(), ...metadata, ...messageDiagnostic(message, options.includePayload === true, Number(options.maxPayloadBytes), redactor) };
           await logger.record(record); await exports?.record(record);
@@ -61,8 +70,12 @@ export function kafkaCommands(program: Command, redactor: Redactor) {
         });
       } catch (error) {
         failure = error; stats.errors++;
-        const record = { timestamp: new Date().toISOString(), ...metadata, result: 'error', errorType: kafkaError(error), error: error instanceof Error ? error.message : 'Kafka operation failed' };
+        const errorType = kafkaError(error);
+        const record = { timestamp: new Date().toISOString(), ...metadata, result: 'error', errorType, error: error instanceof Error ? error.message : 'Kafka operation failed',
+          ...(errorType === 'KAFKA_GROUP_PROTOCOL_ERROR' ? { supportedAssignors: consumerAssignors } : {}) };
         await logger.record(record); await exports?.record(record); logger.error(record); process.exitCode = 1;
+        if (errorType === 'KAFKA_GROUP_PROTOCOL_ERROR') logger.console(groupProtocolDiagnostic(profile.name, String(options.groupId)));
+        if (errorType === 'KAFKA_GROUP_NOT_FOUND') logger.console(`Consumer group ${options.groupId} does not exist.`);
       } finally {
         process.removeListener('SIGINT', stop); process.removeListener('SIGTERM', stop);
         try {

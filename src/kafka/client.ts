@@ -28,6 +28,8 @@ export function kafkaError(error: unknown): string {
   }
   const text = parts.join(' ').toUpperCase();
   if (text.includes('CONFIG_ERROR')) return 'CONFIG_ERROR';
+  if (/INCONSISTENT_GROUP_PROTOCOL|SUPPORTED PROTOCOLS ARE INCOMPATIBLE|\b23\b/.test(text)) return 'KAFKA_GROUP_PROTOCOL_ERROR';
+  if (/KAFKA_GROUP_NOT_FOUND|GROUP_ID_NOT_FOUND|\b69\b/.test(text)) return 'KAFKA_GROUP_NOT_FOUND';
   if (/TOPIC_AUTHORIZATION|\b29\b/.test(text)) return 'KAFKA_TOPIC_AUTHORIZATION_ERROR';
   if (/GROUP_AUTHORIZATION|\b30\b/.test(text)) return 'KAFKA_GROUP_AUTHORIZATION_ERROR';
   if (/UNKNOWN_TOPIC|\b3\b/.test(text)) return 'KAFKA_UNKNOWN_TOPIC';
@@ -46,6 +48,39 @@ export type AdminClient = Pick<ReturnType<Kafka['admin']>, 'connect' | 'fetchTop
 export async function connectionTest(admin: AdminClient) {
   try { await admin.connect(); await admin.fetchTopicMetadata({ topics: [] }); }
   finally { await admin.disconnect(); }
+}
+// KafkaJS 2.2.4 defaults to [PartitionAssigners.roundRobin], whose protocol name is this.
+export const consumerAssignors = ['RoundRobinAssigner'] as const;
+export function groupProtocolDiagnostic(profile: string, groupId: string) {
+  return `Consumer group protocol mismatch.\n\nThe selected consumer group already has active members whose supported\npartition assignment protocol is incompatible with this client.\n\nClient supported assignors: ${consumerAssignors.join(', ')}\n\nRun:\n\n  kafka group-describe --profile ${profile} --group-id ${groupId}\n\nto inspect the group's current protocol.`;
+}
+export type GroupAdminClient = Pick<ReturnType<Kafka['admin']>, 'connect' | 'describeGroups' | 'disconnect'>;
+export async function describeGroup(admin: GroupAdminClient, groupId: string) {
+  validateGroupId(groupId);
+  try {
+    await admin.connect();
+    const { groups } = await admin.describeGroups([groupId]);
+    const group = groups.find(group => group.groupId === groupId);
+    if (!group || group.state === 'Dead') throw new Error(`KAFKA_GROUP_NOT_FOUND: Consumer group ${groupId} does not exist`);
+    // Whitelist diagnostic fields: never retain opaque member metadata or assignments.
+    return { groupId: group.groupId, state: group.state, protocolType: group.protocolType, protocol: group.protocol,
+      memberCount: group.members.length, members: group.members.map(member => ({
+        ...(member.clientId ? { clientId: member.clientId } : {}),
+        ...(member.memberId ? { memberId: member.memberId } : {}),
+        ...(member.clientHost ? { host: member.clientHost } : {}),
+        ...(Buffer.isBuffer(member.memberAssignment) ? { assignmentBytes: member.memberAssignment.length } : {})
+      })) };
+  } finally { await admin.disconnect(); }
+}
+export function groupDescriptionOutput(group: Awaited<ReturnType<typeof describeGroup>>) {
+  return [`Group ID: ${group.groupId}`, `State: ${group.state}`,
+    ...(group.protocolType ? [`Protocol type: ${group.protocolType}`] : []),
+    ...(group.protocol ? [`Protocol: ${group.protocol}`] : []), `Members: ${group.memberCount}`,
+    ...group.members.map((member, index) => [`\nMember ${index + 1}`,
+      ...(member.clientId ? [`  Client ID: ${member.clientId}`] : []),
+      ...(member.memberId ? [`  Member ID: ${member.memberId}`] : []),
+      ...(member.host ? [`  Host: ${member.host}`] : []),
+      ...(member.assignmentBytes !== undefined ? [`  Assignment metadata: ${member.assignmentBytes} bytes (opaque payload omitted)`] : [])].join('\n'))].join('\n');
 }
 export type ConsumerClient = Pick<ReturnType<Kafka['consumer']>, 'connect' | 'subscribe' | 'run' | 'stop' | 'disconnect' | 'on' | 'events'>;
 export type ConsumeOptions = { topic: string; count?: number; durationMs?: number; fromBeginning?: boolean; signal?: AbortSignal };

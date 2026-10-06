@@ -493,6 +493,14 @@ The following are planned, **not implemented**:
 See [the architecture specification](docs/architecture.md) for the broader direction. Its proposed commands and future requirements do not imply current CLI support.
 ## Native Kafka
 
+When consume reports `The group member's supported protocols are incompatible with those of existing members`, inspect the existing group:
+
+```sh
+npm run dev -- kafka group-describe --profile <profile-name> --group-id <group-id>
+```
+
+This read-only inspection does not create a group or change offsets. See [consumer group diagnostics](docs/kafka.md#consumer-group-diagnostics).
+
 REST supports OAuth2 or mTLS; Native Kafka supports mTLS only. Kafka automatically selects authentication and environment from the profile.
 
 ```sh

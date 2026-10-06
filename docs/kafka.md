@@ -42,3 +42,24 @@ npm run dev -- kafka consume --profile <profile-name> \
 Central redaction applies to both console JSON/text and persistent diagnostics, including registered shared, OAuth2 and mTLS secrets. Keys remain null/byte-size metadata and headers remain omitted. The flag does not expose header or key content, alter group behavior or change offset semantics. The timestamp retains Kafka's original millisecond string.
 
 For backward compatibility this flag controls both console display and bounded JSON object/array inclusion in JSONL. `--max-payload-bytes` limits persistent diagnostics only; console text/JSON displays the complete received value. Text and binary payloads remain omission markers in JSONL, and CSV/summary exports still exclude payloads. REST uses `--show-response`; Kafka consumes messages and deliberately uses `--include-payload`, with no `--show-response` alias.
+
+## Consumer group diagnostics
+
+A consumer group identifies cooperating consumers that share topic partitions. Committed offsets belong to the group: reusing its ID preserves its offset history. Creating another group starts a separate offset history and is not a neutral troubleshooting step. The CLI never changes your supplied group ID automatically, resets offsets, or deletes groups.
+
+```sh
+npm run dev -- kafka group-describe \
+  --profile <profile-name> --group-id <group-id>
+```
+
+This command uses the same profile brokers, mTLS/P12 credentials, UUID client ID rules, timeouts, and redacted JSONL infrastructure as other Kafka commands. OAuth2 is not required or used. KafkaJS 2.2.4's public `admin.describeGroups([groupId])` API inspects the existing group without joining it or committing offsets.
+
+Output includes the group ID, state, protocol type, selected partition assignment protocol, and active member count. `Stable` indicates a settled group; `PreparingRebalance`/`CompletingRebalance` indicate membership or assignment changes. `Empty` with zero members is a successful inspection of an inactive group. `Dead`, an absent description, or broker `GROUP_ID_NOT_FOUND` produces `KAFKA_GROUP_NOT_FOUND`. Authorization and broker errors retain existing Kafka classifications. Missing optional member fields are omitted.
+
+Members expose client ID, member ID, and host when available. Assignment metadata is reported only as a byte count; opaque assignment and subscription buffers are never displayed or logged. The public admin description does not expose the coordinator, so the CLI omits it. JSONL records safe group state/protocol/member metadata, run/profile/environment/transport identifiers, result, and error classification through central redaction. Existing redaction rules may mask member client IDs.
+
+`INCONSISTENT_GROUP_PROTOCOL` (Kafka error code 23), including errors saying `supported protocols are incompatible`, is classified as `KAFKA_GROUP_PROTOCOL_ERROR`. The selected group's active members support a protocol incompatible with this client. Inspect the group's protocol before deciding how to configure clients; the error alone does not establish a specific assignor as the cause.
+
+The installed KafkaJS 2.2.4 consumer defaults to `[PartitionAssigners.roundRobin]`, advertised on the wire as **`RoundRobinAssigner`** (version 0). The CLI leaves this default unchanged and includes that exact supported protocol name in mismatch diagnostics and error logs. No assignor selection option is added in this change; compatibility with other assignors may require a future configuration option and supported implementation.
+
+The **group ID format warning** is separate from **group protocol incompatibility**. The SAF regex `^CG-(\d{5,6})-IDP(\d{6})$` remains advisory: `CG-00001-IDP5061788` is allowed unchanged with a warning. A format deviation does not diagnose the protocol mismatch.
