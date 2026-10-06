@@ -1,0 +1,40 @@
+# Canonical Profile/Auth v2 reference; keep real values outside Git.
+name: example-profile
+environment: IAT # or PROD; choose explicitly, neither is the default.
+credentials:
+  # Reusable request credentials; inserted only by explicit placeholders.
+  shared:
+    licenceKey: "<licence-key>"
+    password: "<techuser-password>"
+    # Alternative: replace both direct fields with this complete pair:
+    # licenceKeyEnv: SAF_LICENCE_KEY
+    # passwordEnv: SAF_TECHUSER_PASSWORD
+  # REST transport authentication.
+  oauth2:
+    clientId: "<client-id>"
+    clientSecret: "<client-secret>"
+    openIdConfigurationUrl: https://example.invalid/.well-known/openid-configuration
+    tokenAuthMethod: client_secret_basic
+    scope: https://graph.microsoft.com/.default
+    # Alternative: replace clientId/clientSecret with this complete pair:
+    # clientIdEnv: SAF_CLIENT_ID
+    # clientSecretEnv: SAF_CLIENT_SECRET
+  # REST and native Kafka transport authentication.
+  mtls:
+    p12Path: ~/.config/saf-cli-tester/certificates/example.p12
+    p12Password: "<p12-password>"
+    # Alternative: replace p12Password with p12PasswordEnv: SAF_P12_PASSWORD
+rest:
+  baseUrl: https://example.invalid # Replace with the approved SAF HTTPS base URL.
+  timeoutMs: 30000
+  auth:
+    mode: oauth2
+    credential: oauth2
+# To use REST mTLS, change only rest.auth.mode and rest.auth.credential to mtls.
+kafka:
+  brokers:
+    - "<kafka-broker>:9092"
+  auth:
+    mode: mtls
+    credential: mtls
+# Consumer topic, group ID and count/duration are CLI flags, not profile fields.

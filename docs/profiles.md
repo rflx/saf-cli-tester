@@ -2,7 +2,7 @@
 
 A profile represents one TechUser in exactly one environment, `IAT` or `PROD`. There is no environment override. Make separate profiles for separate environments. Keep profiles under the external configuration root's `profiles/` directory and use `.yaml` filenames matching `name`.
 
-See the safe [OAuth2 example](../examples/profile.oauth2.example.yaml) and [mTLS example](../examples/profile.mtls.example.yaml). All configured URLs require HTTPS without user information or fragments. Profile `rest` supports `baseUrl`, `auth`, optional `timeoutMs` and `headers`. Profiles may configure REST only, Kafka only, or both; at least one transport is required.
+See the safe [OAuth2 example](../examples/profile.oauth2.example.yaml) and [mTLS example](../examples/profile.mtls.example.yaml), plus the canonical [full profile reference](../examples/profile.full.example.yaml). All configured URLs require HTTPS without user information or fragments. Profile `rest` supports `baseUrl`, `auth`, optional `timeoutMs` and `headers`. Profiles may configure REST only, Kafka only, or both; at least one transport is required.
 
 OAuth2 requires one complete credential pair (described below), and `tokenEndpoint` or `openIdConfigurationUrl`. An explicit endpoint takes precedence over discovery. Optional nonempty `scope` is passed to the token request; EcoHub SAF requires `https://graph.microsoft.com/.default`. `tokenAuthMethod` defaults to `client_secret_basic`; `client_secret_post` sends the credentials in the form body. Tokens must be Bearer tokens with a positive numeric `expires_in`. They remain in memory and refresh before expiry. Endpoints are trusted configuration: discovery may return a token endpoint on another HTTPS origin. Verify your configuration before supplying real secrets.
 
@@ -24,14 +24,14 @@ environment: IAT # or PROD
 
 credentials:
   oauth2:
-    clientId: "..."
-    clientSecret: "..."
+    clientId: "<client-id>"
+    clientSecret: "<client-secret>"
     openIdConfigurationUrl: https://<openid-configuration-url>
     tokenAuthMethod: client_secret_basic
     scope: https://graph.microsoft.com/.default
   mtls:
     p12Path: ~/.config/saf-cli-tester/certificates/example.p12
-    p12Password: "..."
+    p12Password: "<p12-password>"
 
 rest:
   baseUrl: https://<saf-base-url>
@@ -93,3 +93,5 @@ Profile/Auth v2 already supports Kafka; no new profile fields or consumer defaul
 ## Shared request credentials and profile placeholders
 
 Optional `credentials.shared` stores secret `licenceKey` and `password` values, or the complete `licenceKeyEnv`/`passwordEnv` pair. Partial, empty or mixed pairs are invalid. They are separate from REST OAuth2/mTLS and Kafka mTLS authentication and are never sent automatically. Only explicit `{{profile:credentials.shared.licenceKey}}` and `{{profile:credentials.shared.password}}` references can access profile data. Missing values fail before network access with `CONFIG_ERROR`. Both secrets and encoded forms are centrally redacted, including echoed diagnostics; request payloads are not logged. See [templates](templates.md) for execution timing, polling and generic General API examples.
+
+The examples are schema references with fake values; copy them to `~/.config/saf-cli-tester/profiles/<name>.yaml` and adapt them. The filename must match `name`. IAT is illustrative, not a default. The full example includes shared request credentials and both transports. To switch REST to mTLS, change only `rest.auth.mode` and `rest.auth.credential` to `mtls`. Consumer topic, group ID and bounds are CLI flags, not profile fields.

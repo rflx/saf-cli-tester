@@ -1,5 +1,25 @@
 # Configuration
 
+Repository and local files have distinct purposes:
+
+- `examples/`: reference configuration examples to copy or adapt; normally `*.example.yaml`.
+- `templates/`: versioned, ready-to-run request templates using runtime placeholders, grouped by API/domain.
+- `~/.config/saf-cli-tester/requests/`: local custom requests/templates or one-off definitions, kept outside Git.
+
+Real local configuration belongs under:
+
+```text
+~/.config/saf-cli-tester/
+├── config.yaml
+├── profiles/       # Real local TechUser/profile configuration
+├── certificates/   # Real local P12/PFX/certificate material
+├── requests/       # Local custom requests/templates
+└── logs/           # Runtime JSONL logs
+```
+
+The CLI also reports an optional `secrets/` path; it does not automatically load `.env` files. Repository templates supply requests; the selected local profile supplies endpoints and credentials. Never commit real credentials, certificates, customer payloads or logs.
+
+
 The default root is `~/.config/saf-cli-tester/`, expanded using the current user's home directory. `--config-dir` overrides it. `config paths` reports `config.yaml`, `profiles/`, `secrets/`, `certificates/`, `requests/` and `logs/`. `config show` reports sanitized application defaults. Reading config does not create directories.
 
 An optional `config.yaml` supports:

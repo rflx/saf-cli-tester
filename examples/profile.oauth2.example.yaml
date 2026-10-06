@@ -1,15 +1,18 @@
-name: example-profile
-environment: IAT # or PROD
+# Reference only: replace example values in a local profile before use.
+name: example-oauth2
+environment: IAT # or PROD; choose explicitly, neither is the default.
 credentials:
   oauth2:
+    clientId: "<client-id>"
+    clientSecret: "<client-secret>"
     openIdConfigurationUrl: https://example.invalid/.well-known/openid-configuration
-    clientIdEnv: SAF_EXAMPLE_CLIENT_ID
-    clientSecretEnv: SAF_EXAMPLE_CLIENT_SECRET
-    scope: https://graph.microsoft.com/.default
     tokenAuthMethod: client_secret_basic
+    scope: https://graph.microsoft.com/.default
+    # Alternative: replace clientId/clientSecret with this complete pair:
+    # clientIdEnv: SAF_CLIENT_ID
+    # clientSecretEnv: SAF_CLIENT_SECRET
 rest:
-  baseUrl: https://example.invalid
-  timeoutMs: 30000
+  baseUrl: https://example.invalid # Replace with the approved SAF HTTPS base URL.
   auth:
     mode: oauth2
     credential: oauth2

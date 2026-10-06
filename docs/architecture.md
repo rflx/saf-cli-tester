@@ -1,5 +1,25 @@
 # SAF CLI Tester
 
+Repository and local files have distinct purposes:
+
+- `examples/`: reference configuration examples to copy or adapt; normally `*.example.yaml`.
+- `templates/`: versioned, ready-to-run request templates using runtime placeholders, grouped by API/domain.
+- `~/.config/saf-cli-tester/requests/`: local custom requests/templates or one-off definitions, kept outside Git.
+
+Real local configuration belongs under:
+
+```text
+~/.config/saf-cli-tester/
+├── config.yaml
+├── profiles/       # Real local TechUser/profile configuration
+├── certificates/   # Real local P12/PFX/certificate material
+├── requests/       # Local custom requests/templates
+└── logs/           # Runtime JSONL logs
+```
+
+The CLI also reports an optional `secrets/` path; it does not automatically load `.env` files. Repository templates supply requests; the selected local profile supplies endpoints and credentials. Never commit real credentials, certificates, customer payloads or logs.
+
+
 ## 1. Purpose
 
 `saf-cli-tester` is a command-line diagnostic and testing tool for EcoHub SAF.
@@ -191,14 +211,14 @@ environment: IAT # or PROD
 
 credentials:
   oauth2:
-    clientId: "..."
-    clientSecret: "..."
+    clientId: "<client-id>"
+    clientSecret: "<client-secret>"
     openIdConfigurationUrl: https://<openid-configuration-url>
     tokenAuthMethod: client_secret_basic
     scope: https://graph.microsoft.com/.default
   mtls:
     p12Path: ~/.config/saf-cli-tester/certificates/example.p12
-    p12Password: "..."
+    p12Password: "<p12-password>"
 
 rest:
   baseUrl: https://<saf-base-url>
@@ -868,7 +888,12 @@ saf-cli-tester/
 ├── examples/
 │   ├── profile.oauth2.example.yaml
 │   ├── profile.mtls.example.yaml
+│   ├── profile.full.example.yaml
 │   └── request.example.yaml
+├── templates/
+│   └── general-api/
+│       ├── saf-receivers.yaml
+│       └── saf-insurers.yaml
 ├── docs/
 │   ├── architecture.md
 │   ├── configuration.md

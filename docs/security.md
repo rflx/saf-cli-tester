@@ -1,5 +1,25 @@
 # Security
 
+Repository and local files have distinct purposes:
+
+- `examples/`: reference configuration examples to copy or adapt; normally `*.example.yaml`.
+- `templates/`: versioned, ready-to-run request templates using runtime placeholders, grouped by API/domain.
+- `~/.config/saf-cli-tester/requests/`: local custom requests/templates or one-off definitions, kept outside Git.
+
+Real local configuration belongs under:
+
+```text
+~/.config/saf-cli-tester/
+├── config.yaml
+├── profiles/       # Real local TechUser/profile configuration
+├── certificates/   # Real local P12/PFX/certificate material
+├── requests/       # Local custom requests/templates
+└── logs/           # Runtime JSONL logs
+```
+
+The CLI also reports an optional `secrets/` path; it does not automatically load `.env` files. Repository templates supply requests; the selected local profile supplies endpoints and credentials. Never commit real credentials, certificates, customer payloads or logs.
+
+
 Optional CSV and summary JSON exports use central redaction and an explicit request-field allowlist. They exclude headers, tokens, request payloads and certificate material. Exports are local diagnostics and must never be committed. Default export paths are rejected inside Git repositories, including symlinked locations; explicit `--output` can target a user-selected path. New export files use exclusive creation and mode 0600. `.gitignore` excludes `*.csv` and `*.summary.json`; arbitrary custom output names still require care when staging files.
 
 Keep real credentials, profiles, certificates, customer payloads and diagnostic logs outside this Git repository. Recommended root: `~/.config/saf-cli-tester/`. Apply restrictive filesystem permissions to all manually created secret files and directories. Existing directory permissions are not changed by the CLI.

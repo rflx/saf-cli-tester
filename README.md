@@ -1,5 +1,25 @@
 # SAF CLI Tester
 
+Repository and local files have distinct purposes:
+
+- `examples/`: reference configuration examples to copy or adapt; normally `*.example.yaml`.
+- `templates/`: versioned, ready-to-run request templates using runtime placeholders, grouped by API/domain.
+- `~/.config/saf-cli-tester/requests/`: local custom requests/templates or one-off definitions, kept outside Git.
+
+Real local configuration belongs under:
+
+```text
+~/.config/saf-cli-tester/
+├── config.yaml
+├── profiles/       # Real local TechUser/profile configuration
+├── certificates/   # Real local P12/PFX/certificate material
+├── requests/       # Local custom requests/templates
+└── logs/           # Runtime JSONL logs
+```
+
+The CLI also reports an optional `secrets/` path; it does not automatically load `.env` files. Repository templates supply requests; the selected local profile supplies endpoints and credentials. Never commit real credentials, certificates, customer payloads or logs.
+
+
 Diagnose EcoHub SAF REST and Native Kafka connectivity using a local TechUser profile for IAT or PROD. Run authenticated requests, consume bounded Kafka records, and collect local diagnostics.
 
 **Keep real credentials, certificates, customer payloads, profiles and diagnostic files outside Git.** Use `~/.config/saf-cli-tester/` for local configuration. Redaction cannot remove every kind of sensitive business data.
@@ -24,16 +44,16 @@ npm ci
 npm run build
 npm run dev -- --help
 mkdir -p ~/.config/saf-cli-tester/profiles
-cp examples/profile.oauth2.example.yaml ~/.config/saf-cli-tester/profiles/example-profile.yaml
-chmod 600 ~/.config/saf-cli-tester/profiles/example-profile.yaml
+cp examples/profile.oauth2.example.yaml ~/.config/saf-cli-tester/profiles/example-oauth2.yaml
+chmod 600 ~/.config/saf-cli-tester/profiles/example-oauth2.yaml
 ```
 
-Edit the copied profile outside the repository. Choose `IAT` or `PROD` for `environment` and replace placeholder URLs with approved endpoints for that environment. Supply `SAF_EXAMPLE_CLIENT_ID` and `SAF_EXAMPLE_CLIENT_SECRET` as exported environment variables through your shell or secret manager. **`.env` files are not automatically loaded.**
+Edit the copied profile outside the repository. Choose `IAT` or `PROD` for `environment` and replace placeholder URLs with approved endpoints for that environment. Replace the direct credential placeholders, or replace both fields with `clientIdEnv: SAF_CLIENT_ID` and `clientSecretEnv: SAF_CLIENT_SECRET` and export those variables through your shell or secret manager. **`.env` files are not automatically loaded.**
 
 ```sh
-npm run dev -- profiles validate example-profile
-npm run dev -- profiles show example-profile
-npm run dev -- rest request --profile example-profile --path /example
+npm run dev -- profiles validate example-oauth2
+npm run dev -- profiles show example-oauth2
+npm run dev -- rest request --profile example-oauth2 --path /example
 ```
 
 Replace `/example` with an actual SAF resource path. All URLs and resource paths in this README are placeholders. Validation is local; the final command contacts the configured service. Each run prints its environment, run ID, log location, results and final statistics.
@@ -82,14 +102,14 @@ environment: IAT # or PROD
 
 credentials:
   oauth2:
-    clientId: "..."
-    clientSecret: "..."
+    clientId: "<client-id>"
+    clientSecret: "<client-secret>"
     openIdConfigurationUrl: https://<openid-configuration-url>
     tokenAuthMethod: client_secret_basic
     scope: https://graph.microsoft.com/.default
   mtls:
     p12Path: ~/.config/saf-cli-tester/certificates/example.p12
-    p12Password: "..."
+    p12Password: "<p12-password>"
 
 rest:
   baseUrl: https://<saf-base-url>
@@ -142,8 +162,8 @@ Profiles may optionally store profile-wide shared request credentials. These are
 ```yaml
 credentials:
   shared:
-    licenceKey: "..."
-    password: "..."
+    licenceKey: "<licence-key>"
+    password: "<techuser-password>"
 ```
 
 Alternatively, use exactly one complete environment-backed pair:
@@ -163,18 +183,20 @@ Supported values are `{{uuid}}`, `{{nowUtc}}`, `{{env:VARIABLE_NAME}}`, `{{profi
 
 Profile access is intentionally allowlisted to those two shared fields. Other profile references, unknown placeholders and malformed placeholders fail with `CONFIG_ERROR` before authentication or network access. A missing shared value identifies its configuration path without exposing secrets. Resolution is recursive in body objects, arrays, strings and permitted header values. No expressions or arbitrary property traversal are supported. See [template details](docs/templates.md).
 
-## General API examples
+## General API templates
 
 The generic templates work with any compatible TechUser profile using REST OAuth2 or mTLS:
 
 ```sh
 npm run dev -- run \
   --profile <profile-name> \
-  --request examples/saf-receivers.yaml
+  --request templates/general-api/saf-receivers.yaml \
+  --show-response
 
 npm run dev -- run \
   --profile <profile-name> \
-  --request examples/saf-insurers.yaml
+  --request templates/general-api/saf-insurers.yaml \
+  --show-response
 ```
 
 The profile supplies environment, REST base URL, transport authentication and shared credentials. The template supplies method, API path, body schema, generated request ID/time and user agent. No `onBehalfOf` is added. PROD writes require `--allow-prod-write`; mutating polls require an explicit interval.
@@ -333,7 +355,7 @@ Requests run sequentially, with no overlap or catch-up bursts. Slow requests can
 
 ## Request Templates
 
-Templates complement ad-hoc requests. Save reusable YAML locally; keep real payloads outside Git:
+Templates complement ad-hoc requests. Save this example as `~/.config/saf-cli-tester/requests/minute-poll.yaml`; keep real payloads outside Git:
 
 ```yaml
 name: minute-poll-test
@@ -348,31 +370,15 @@ expect:
 ```
 
 ```sh
-npm run dev -- run --profile example-profile --request examples/request.example.yaml
-npm run dev -- run --profile example-profile --request examples/request.example.yaml --count 5 --interval 10
+npm run dev -- run --profile example-profile --request ~/.config/saf-cli-tester/requests/minute-poll.yaml
+npm run dev -- run --profile example-profile --request ~/.config/saf-cli-tester/requests/minute-poll.yaml --count 5 --interval 10
 ```
 
 Omit `poll` for a single request. `request` accepts `method`, `path`, `headers`, `body` or `bodyFile`, and `timeoutMs`. `poll` accepts `intervalSeconds` and exactly one of `count` or `duration`. Optional `expect.status` narrows accepted 2xx statuses; other 2xx responses become `UNEXPECTED_STATUS`. Non-2xx responses remain failures even if listed.
 
 Body strings, nested objects, arrays and permitted header values support `{{uuid}}`, `{{nowUtc}}` and `{{env:VARIABLE_NAME}}`. Each request, including every poll iteration, receives a new UUID and a current UTC timestamp immediately before HTTP execution. Missing/empty variables, unknown placeholders and malformed placeholders fail with `CONFIG_ERROR`. Environment values pass through central secret redaction; request bodies remain excluded from logs and exports. No code or shell expressions are evaluated.
 
-General API body example (use the resource path and payload contract for your deployment):
-
-```yaml
-request:
-  method: POST
-  path: /replace-with-general-api-path
-  headers:
-    Content-Type: application/json
-  body:
-    requestId: "{{uuid}}"
-    requestTime: "{{nowUtc}}"
-    credentials:
-      licenceKey: "{{env:SAF_GENERAL_LICENCE_KEY}}"
-      password: "{{env:SAF_GENERAL_PASSWORD}}"
-```
-
-Export these variables through your shell or secret manager. See [runtime template details](docs/requests.md) and the [General API example](examples/request.general.example.yaml).
+See [runtime template details](docs/requests.md), the [request schema reference](examples/request.example.yaml), and the [General API templates](docs/templates.md).
 
 `run` accepts the REST request and polling flags. CLI settings override templates; an explicit CLI body source replaces the template body source, and CLI count or duration replaces the template bound. Relative template `bodyFile` paths resolve beside the template; CLI body-file paths resolve from the working directory. `~/` paths are supported.
 
@@ -397,7 +403,7 @@ npm run dev -- rest request --profile example-profile --path /example --export c
 npm run dev -- rest poll --profile example-profile --path /example --interval 60 --count 120 --export summary
 npm run dev -- rest poll --profile example-profile --path /example --interval 60 --count 120 --export both
 npm run dev -- rest request --profile example-profile --path /example --export csv --output ~/saf-results/request.csv
-npm run dev -- run --profile example-profile --request examples/request.example.yaml --export both --output ~/saf-results
+npm run dev -- run --profile example-profile --request ~/.config/saf-cli-tester/requests/minute-poll.yaml --export both --output ~/saf-results
 ```
 
 | Format | Default file under `<config-dir>/logs/` | Contents |

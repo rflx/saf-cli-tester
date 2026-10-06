@@ -57,7 +57,7 @@ test('only two profile references are allowed and missing credentials precede au
 
 test('generic templates resolve under either REST auth mode', async () => {
   for (const name of ['saf-receivers', 'saf-insurers']) {
-    const template = await loadTemplate('examples/' + name + '.yaml');
+    const template = await loadTemplate('templates/general-api/' + name + '.yaml');
     for (const mode of ['oauth2', 'mtls']) {
       const selected = profileSchema.parse({ ...profile, credentials: { ...profile.credentials, mtls: { p12Path: '/unused.p12', p12Password: '' } }, rest: { ...profile.rest, auth: { mode, credential: mode } } });
       const request = resolveRequest(configSchema.parse({}), selected, template.request);

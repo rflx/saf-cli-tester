@@ -1,5 +1,25 @@
 # Request templates
 
+Repository and local files have distinct purposes:
+
+- `examples/`: reference configuration examples to copy or adapt; normally `*.example.yaml`.
+- `templates/`: versioned, ready-to-run request templates using runtime placeholders, grouped by API/domain.
+- `~/.config/saf-cli-tester/requests/`: local custom requests/templates or one-off definitions, kept outside Git.
+
+Real local configuration belongs under:
+
+```text
+~/.config/saf-cli-tester/
+├── config.yaml
+├── profiles/       # Real local TechUser/profile configuration
+├── certificates/   # Real local P12/PFX/certificate material
+├── requests/       # Local custom requests/templates
+└── logs/           # Runtime JSONL logs
+```
+
+The CLI also reports an optional `secrets/` path; it does not automatically load `.env` files. Repository templates supply requests; the selected local profile supplies endpoints and credentials. Never commit real credentials, certificates, customer payloads or logs.
+
+
 Templates are reusable request descriptions, independent of TechUser identity and REST authentication mode. See [request syntax](requests.md) for schema, CLI overrides, body files and polling bounds.
 
 | Placeholder | Value |
@@ -18,11 +38,11 @@ Resolution visits nested body objects, arrays, string values and permitted heade
 
 `credentials.shared` is optional and requires a complete direct `licenceKey`/`password` pair or a complete `licenceKeyEnv`/`passwordEnv` pair. Empty, partial or mixed pairs fail validation. These are request data, never transport authentication, and are never automatically attached to REST requests or Kafka configuration.
 
-Use [saf-receivers](../examples/saf-receivers.yaml) or [saf-insurers](../examples/saf-insurers.yaml):
+Use [saf-receivers](../templates/general-api/saf-receivers.yaml) or [saf-insurers](../templates/general-api/saf-insurers.yaml):
 
 ```sh
-npm run dev -- run --profile <profile-name> --request examples/saf-receivers.yaml
-npm run dev -- run --profile <profile-name> --request examples/saf-insurers.yaml
+npm run dev -- run --profile <profile-name> --request templates/general-api/saf-receivers.yaml
+npm run dev -- run --profile <profile-name> --request templates/general-api/saf-insurers.yaml
 ```
 
 Both use top-level licenceKey/password body fields, generated requestId/requestTime and userAgent. They work with REST OAuth2 or mTLS and omit onBehalfOf. To poll, add an explicit interval and count/duration; PROD writes require `--allow-prod-write`.

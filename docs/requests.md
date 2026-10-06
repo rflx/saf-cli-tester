@@ -20,25 +20,7 @@ Variable names must match `[A-Za-z_][A-Za-z0-9_]*`. Missing or empty variables f
 
 Only body and header values support placeholders. Paths, body-file filenames and object/header names do not. Reserved request headers remain prohibited, and resolved header values must pass Node's HTTP header validation; newline injection is rejected with a safe configuration error.
 
-For the General API, export `SAF_GENERAL_LICENCE_KEY` and `SAF_GENERAL_PASSWORD` through your shell or secret manager, then use:
-
-```yaml
-name: general-api-runtime-values
-request:
-  method: POST
-  path: /replace-with-general-api-path
-  headers:
-    Content-Type: application/json
-    X-Request-ID: "{{uuid}}"
-  body:
-    requestId: "{{uuid}}"
-    requestTime: "{{nowUtc}}"
-    credentials:
-      licenceKey: "{{env:SAF_GENERAL_LICENCE_KEY}}"
-      password: "{{env:SAF_GENERAL_PASSWORD}}"
-```
-
-Replace the illustrative resource path and adapt the payload to your General API contract. See the [tracked example](../examples/request.general.example.yaml). Execute it with `npm run dev -- run --profile example-profile --request examples/request.general.example.yaml`. To poll, add `--interval 60 --count 2`; PROD writes also require `--allow-prod-write`.
+Adapt the [request schema reference](../examples/request.example.yaml) for local custom requests. For General API calls, use the [versioned executable templates](templates.md), which read shared credentials from the selected profile. To poll a POST template, add `--interval 60 --count 2`; PROD writes also require `--allow-prod-write`.
 
 Every environment placeholder value is registered with central redaction, including encoded forms, regardless of its body field or header name. Logs, debug/console output, error diagnostics and CSV/summary exports use central redaction. Request bodies remain excluded from request logging and exports. Keep actual credentials and sensitive payloads outside Git; tracked examples contain variable names only.
 

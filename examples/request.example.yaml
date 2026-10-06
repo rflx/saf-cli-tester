@@ -1,9 +1,24 @@
-name: minute-poll-test
+# Reference request schema: adapt the path and optional body before execution.
+name: example-request
 request:
-  method: GET
-  path: /example
-poll:
-  intervalSeconds: 60
-  count: 120
-expect:
-  status: [200]
+  method: POST
+  path: /example/path
+  headers:
+    Content-Type: application/json
+    Accept: application/json
+  # body is optional; do not attach a body to GET/HEAD.
+  body:
+    requestId: "{{uuid}}"
+    requestTime: "{{nowUtc}}"
+    message: example
+    # Optional request credentials, only when required by the API:
+    # licenceKey: "{{profile:credentials.shared.licenceKey}}"
+    # password: "{{profile:credentials.shared.password}}"
+    # customValue: "{{env:SAF_EXAMPLE_VALUE}}"
+# Optional polling: choose count OR duration and an explicit interval for POST.
+# poll:
+#   intervalSeconds: 60
+#   count: 2
+# Optional expected success statuses:
+# expect:
+#   status: [200]
