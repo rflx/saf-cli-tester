@@ -7,9 +7,10 @@ import { Redactor } from '../logging/redactor.js';
 import { profilesCommands } from './commands/profiles.js';
 import { requestFlags, pollFlags, runRequest } from './commands/rest-request.js';
 import { templateCommand } from './commands/run.js';
+import { kafkaCommands } from './commands/kafka.js';
 
 const redactor = new Redactor(); const logger = new Logger(redactor);
-const program = new Command().name('saf-cli-tester').description('SAF REST connectivity diagnostics').version('0.1.0')
+const program = new Command().name('saf-cli-tester').description('SAF REST and Kafka connectivity diagnostics').version('0.1.0')
   .option('--config-dir <directory>', 'Local configuration root', '~/.config/saf-cli-tester');
 program.configureOutput({ writeOut: value => process.stdout.write(redactor.text(value)), writeErr: value => process.stderr.write(redactor.text(value)), outputError: () => logger.error('CONFIG_ERROR: Invalid command arguments; use --help') });
 const config = program.command('config');
@@ -20,6 +21,7 @@ const rest = program.command('rest');
 requestFlags(rest.command('request')).action(async (options: Record<string,unknown>) => runRequest(program, options, redactor, false));
 pollFlags(requestFlags(rest.command('poll'))).action(async (options: Record<string,unknown>) => runRequest(program, options, redactor, true));
 templateCommand(program, redactor);
+kafkaCommands(program, redactor);
 try { await program.parseAsync(); }
 catch (error) {
   // Schema errors may embed untrusted values; emit field paths only.

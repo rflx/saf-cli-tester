@@ -48,7 +48,7 @@ kafka:
     credential: mtls
 ```
 
-Kafka configuration is preparation only. `brokers` must contain at least one `host:port` with port 1–65535. There are no Kafka commands or broker connections. Validation checks the schema, all configured credential variables and local certificate material, and reports each configured transport's selected auth and local validation status. Credential checks run independently: a Kafka certificate failure does not hide a successful REST OAuth2 check. Shared mTLS material is checked once. Any failed configured credential makes validation fail. A REST command using a Kafka-only profile fails with a configuration message.
+`brokers` must contain at least one `host:port` with port 1–65535. `kafka connection-test` and `kafka consume` establish live mTLS broker connections. Profile validation checks the schema, all configured credential variables and local certificate material, and reports each configured transport's selected auth and local validation status without network access. Credential checks run independently: a Kafka certificate failure does not hide a successful REST OAuth2 check. Shared mTLS material is checked once. Any failed configured credential makes validation fail. A REST command using a Kafka-only profile fails with a configuration message.
 
 ### Migration from legacy profiles
 
@@ -86,3 +86,6 @@ For legacy mTLS, move `p12Path` and `p12PasswordEnv` into `credentials.mtls` and
 OAuth2 `credentials.oauth2.scope` is optional and must be a nonempty string when configured. For EcoHub SAF, set `scope: https://graph.microsoft.com/.default`. It is included in the `application/x-www-form-urlencoded` client-credentials token request for either authentication method. Omitting it preserves existing token request behavior.
 
 `AUTH_ERROR` diagnostics retain the OAuth2 exchange stage, HTTP status and sanitized string fields `error` and `error_description` under `oauth2` in request results and JSONL logs. Error fields are limited to 1024 characters and control characters are removed. Other response fields and non-JSON bodies are omitted; client secrets and access tokens are redacted.
+# Native Kafka profile
+
+Profile/Auth v2 already supports Kafka; no new profile fields or consumer defaults are introduced. Native Kafka requires `kafka.brokers`, `kafka.auth.mode: mtls`, `kafka.auth.credential: mtls` and configured `credentials.mtls`. OAuth2 is rejected. Environment comes exclusively from the profile. `profiles validate` remains local, including P12 readability/password checks; live connectivity uses `kafka connection-test`. See [Kafka](kafka.md).

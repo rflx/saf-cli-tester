@@ -215,7 +215,7 @@ kafka:
     credential: mtls
 ```
 
-Auth references resolve to configured credentials of the matching type. The typed names `oauth2` and `mtls` are the supported references. REST commands inspect `rest.auth` automatically; future Kafka commands will inspect `kafka.auth`. No per-command auth flag is needed. Kafka configuration and local validation are implemented as preparation only; broker connections and Kafka commands remain future work.
+Auth references resolve to configured credentials of the matching type. The typed names `oauth2` and `mtls` are the supported references. REST commands inspect `rest.auth` automatically; Kafka commands inspect `kafka.auth`. No per-command auth flag is needed. Kafka configuration and local validation, live connection testing and bounded consumption are implemented. Producing remains future work.
 
 ---
 
@@ -758,7 +758,7 @@ Keep TechUser enrolment separate from profile configuration until the SAF enrolm
 
 # 21. Future Kafka Architecture
 
-Do not implement Kafka immediately, but prepare for:
+The current Native Kafka milestone implements `kafka connection-test` and `kafka consume`. Producing remains a future milestone:
 
 ```text
 saf-cli-tester kafka consume
@@ -1041,7 +1041,7 @@ For the first implementation, build only:
 15. documentation
 16. unit tests
 
-Do NOT implement Kafka yet.
+The initial REST milestone deferred Kafka. The Native Kafka milestone now implements connection testing and bounded consuming; producing remains deferred.
 
 Do NOT implement automatic TechUser enrolment yet.
 
@@ -1124,3 +1124,6 @@ After implementation:
 7. Do not commit or push unless explicitly requested.
 
 Security takes precedence over convenience.
+# Native Kafka transport
+
+Kafka commands use Profile/Auth v2 and MtlsAuthProvider without OAuth2 broker authentication. `src/kafka/client.ts` isolates KafkaJS configuration and bounded admin/consumer lifecycle; `src/kafka/diagnostics.ts` provides transport metadata and Kafka statistics. Central Logger, Redactor, run IDs and RunExports are shared with REST; export columns are selected per transport and REST defaults are preserved. Explicit batch offset resolution prevents committing records beyond diagnostic bounds. See [Kafka](kafka.md) for EcoHub SAF Message Broker System 1.2.0 scope and dependency evaluation.

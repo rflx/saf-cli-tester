@@ -1,6 +1,6 @@
 # SAF CLI Tester
 
-Diagnose EcoHub SAF REST connectivity using a local TechUser profile for IAT or PROD. Run authenticated requests, repeat them to investigate intermittent failures, and collect local diagnostics.
+Diagnose EcoHub SAF REST and Native Kafka connectivity using a local TechUser profile for IAT or PROD. Run authenticated requests, consume bounded Kafka records, and collect local diagnostics.
 
 **Keep real credentials, certificates, customer payloads, profiles and diagnostic files outside Git.** Use `~/.config/saf-cli-tester/` for local configuration. Redaction cannot remove every kind of sensitive business data.
 
@@ -13,7 +13,7 @@ Diagnose EcoHub SAF REST connectivity using a local TechUser profile for IAT or 
 - Optional CSV and JSON summary exports.
 - Explicit protection against PROD writes.
 
-[Architecture](docs/architecture.md) is the authoritative architecture specification; this release implements its first milestone. Kafka and automatic TechUser enrolment are roadmap items only.
+[Architecture](docs/architecture.md) is the authoritative architecture specification. REST diagnostics and Native Kafka connection testing/consuming are implemented; Kafka producing and automatic TechUser enrolment remain roadmap items.
 
 ## Quick Start
 
@@ -70,11 +70,11 @@ A profile represents one TechUser and is permanently bound to exactly one enviro
 
 Save profiles as `<profile-name>.yaml` in the local `profiles/` directory. The filename must match the YAML `name`. Names start with a letter or number and contain only letters, numbers, `_` or `-`.
 
-Every profile requires `name`, `environment`, reusable `credentials` and at least one transport (`rest`, `kafka`, or both). A profile can hold both OAuth2 and mTLS credentials. REST supports either; native Kafka supports mTLS only. The same `credentials.mtls` can be reused by both transports. REST commands (`rest request`, `rest poll`, `run`) select credentials automatically from `rest.auth`; users normally do not specify an auth mode in commands. Future Kafka commands will use `kafka.auth`.
+Every profile requires `name`, `environment`, reusable `credentials` and at least one transport (`rest`, `kafka`, or both). A profile can hold both OAuth2 and mTLS credentials. REST supports either; native Kafka supports mTLS only. The same `credentials.mtls` can be reused by both transports. REST commands (`rest request`, `rest poll`, `run`) select credentials automatically from `rest.auth`; users normally do not specify an auth mode in commands. Kafka commands use `kafka.auth`.
 
 Profile `rest` requires `baseUrl` and `auth`, and accepts optional `timeoutMs` and `headers`. URLs require HTTPS without embedded credentials or fragments.
 
-Example profile (Kafka is configuration preparation only; Kafka commands are not implemented):
+Example profile with both transports:
 
 ```yaml
 name: example-profile
@@ -392,9 +392,21 @@ No native build dependencies are required. `check` provides strict TypeScript ch
 
 The following are planned, **not implemented**:
 
-- Native Kafka connectivity, produce/consume and Kafka diagnostics.
+- Native Kafka producing and SAF cryptographic payload handling.
 - Automatic TechUser enrolment.
 - Interactive profile creation.
 - Reusable scenarios, profile comparisons and advanced reporting.
 
 See [the architecture specification](docs/architecture.md) for the broader direction. Its proposed commands and future requirements do not imply current CLI support.
+## Native Kafka
+
+REST supports OAuth2 or mTLS; Native Kafka supports mTLS only. Kafka automatically selects authentication and environment from the profile.
+
+```sh
+npm run dev -- kafka connection-test --profile <profile-name>
+npm run dev -- kafka consume --profile <profile-name> \
+  --topic eh.saf.<ecohubId>.commission.out.v1 \
+  --group-id CG-123456-IDP123456 --count 10
+```
+
+Replace placeholders with your own values. SAF consumer groups follow `CG-<5 or 6 digits>-IDP<6 digits>`. Client IDs are UUIDs, generated per run unless supplied with `--client-id`. Consume requires `--count` or `--duration`, resumes group offsets, and starts new groups at latest by default. Payload logging is restricted to metadata by default. Kafka produce is not implemented yet. See [Native Kafka](docs/kafka.md) for offsets, local logs, exports and the EcoHub SAF Message Broker System 1.2.0 scope.

@@ -1,4 +1,7 @@
 const sensitive = /^(authorization|proxyauthorization|cookie|setcookie|clientsecret|clientid|accesstoken|refreshtoken|password|p12password|privatekey|certificate|certificatecontents|pfx|passphrase|secret|secrets|token|authenticationtoken|bearertoken|idtoken|apikey|xapikey)$/i;
+function publicKafkaId(parent: object, key: string, value: unknown) {
+  return key === 'clientId' && (parent as Record<string, unknown>).transport === 'kafka' && typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
 export class Redactor {
   private readonly secrets = new Set<string>();
   add(value: string) { if (value) this.secrets.add(value); }
@@ -6,6 +9,7 @@ export class Redactor {
     if (!value || typeof value !== 'object' || seen.has(value)) return;
     seen.add(value);
     for (const [key, child] of Object.entries(value)) {
+      if (publicKafkaId(value, key, child)) continue;
       if (/^(clientIdEnv|clientSecretEnv|p12PasswordEnv)$/i.test(key) && typeof child === 'string' && process.env[child]) {
         this.register({ secret: process.env[child] });
       }
@@ -33,7 +37,7 @@ export class Redactor {
     if (value && typeof value === 'object') {
       if (seen.has(value)) return '[Circular]'; seen.add(value);
       if (Array.isArray(value)) return value.map(v => this.sanitize(v, seen));
-      return Object.fromEntries(Object.entries(value).map(([key,v]) => [key, sensitive.test(key.replace(/[-_]/g, '')) ? '[REDACTED]' : this.sanitize(v, seen)]));
+      return Object.fromEntries(Object.entries(value).map(([key,v]) => [key, sensitive.test(key.replace(/[-_]/g, '')) && !publicKafkaId(value, key, v) ? '[REDACTED]' : this.sanitize(v, seen)]));
     }
     return value;
   }

@@ -1,0 +1,29 @@
+# Native Kafka
+
+Transport diagnostics targeting **EcoHub SAF Message Broker System 1.2.0**:
+<https://github.myecohub.ch/SAF-Message-Broker/1.2.0/>. The specification site was unavailable during implementation; the supplied 1.2.0 requirements are the implementation baseline.
+
+```sh
+npm run dev -- kafka connection-test --profile <profile-name>
+npm run dev -- kafka consume --profile <profile-name> \
+  --topic eh.saf.<ecohubId>.commission.out.v1 \
+  --group-id CG-123456-IDP123456 --count 10
+```
+
+Use actual values in place of angle-bracket placeholders. Native Kafka supports X.509 TechUser mTLS only, with no OAuth2/SASL broker authentication. Profile/Auth v2 determines the environment, brokers and credential; no CLI environment inference occurs. Known bootstrap brokers are IAT `saf.test-myecohub.ch:9092` and PROD `saf.myecohub.ch:9092`.
+
+KafkaJS 2.2.4 is a pure JavaScript client with TypeScript definitions, admin metadata access and consumer groups, compatible with the project's Node >=20.15.1 requirement. Confluent's maintained client uses native librdkafka bindings; current Platformatic Kafka requires Node >=22.22.0. KafkaJS has an older stable release and its release cadence is a maintenance tradeoff. Its SSL options go directly to Node TLS. The existing MtlsAuthProvider reads P12/PFX into memory, validates it with createSecureContext, and supplies pfx/passphrase directly. No converted certificate or private key is written to disk. Certificate and hostname verification remain enabled; Node system trust and NODE_EXTRA_CA_CERTS apply.
+
+`profiles validate` checks configuration, credential references, file readability and the P12/password combination locally. It never connects to a broker. `connection-test` connects an admin client, requests metadata with an empty topic selection and disconnects without consuming. TLS success is reported after the authenticated Kafka operation succeeds; it is not a separate certificate inspection. Metadata connectivity does not prove topic or group ACL access.
+
+Consume requires an explicit `--group-id` matching `^CG-(\d{5,6})-IDP(\d{6})$`. No profile default is introduced. `--client-id` accepts a UUID, or a fresh UUID is generated and displayed for each run, including connection tests.
+
+At least one bound is required: `--count <positive integer>` or `--duration <duration>` (ms, s, m, h; maximum 24.8 days). With both, the first bound reached stops consumption. Duration starts before connecting; connection/request timeouts and bounded retries may delay final cleanup. SIGINT/SIGTERM trigger graceful stop and summary output (exit code 130). Client failures yield exit code 1. New groups start at the latest offset by default. Existing groups resume committed offsets. `--from-beginning` explicitly starts a new/uncommitted group at earliest available records; it does not reset committed offsets. Diagnostic consumption advances group offsets, so use a dedicated diagnostic group authorized for your TechUser. Only successfully logged records are resolved and committed; unprocessed batch records are not committed.
+
+Arbitrary valid Kafka topic names are accepted. SAF OUT topics include `eh.saf.{ecohubId}.offer.nlpi.out.v1`, `commission.out.v1`, `invoice.out.v1`, `contract.out.v1`, `mandate.out.v1`, `claimsExperience.out.v1`, `claimsExperience.nlpi.out.v1`, `generic.out.v1` and `ids.out.v1` under the same `eh.saf.{ecohubId}.` prefix.
+
+Local JSONL uses the existing run-ID model, records timestamp/profile/environment/topic/partition/string offset/groupId/consumerGroupId/clientId, Kafka timestamp, value size and result. `messageKey` is null or size metadata to avoid exposing customer identifiers. Arbitrary headers are omitted. Console output contains run metadata and totals, never message bodies. By default payload logging is metadata-only. `--include-payload` opts into bounded UTF-8 JSON object/array diagnostics in the local JSONL only, through central redaction, with a sensitive-data warning. `--max-payload-bytes` defaults to 65536 and permits 1–1048576; oversized, binary and non-JSON values are represented by omission markers. Redaction cannot identify every kind of business/customer data: protect local diagnostics accordingly.
+
+`--export csv|summary|both` and `--output` reuse REST export path rules. CSV contains metadata only, including UUID clientId, never keys, headers or payloads. Summary exports contain Kafka totals (messages, value bytes, partitions, errors, seconds and messages/sec), without HTTP status fields. JSONL and exports use restrictive file permissions and central redaction. KafkaJS internal logging is disabled to keep raw errors/configuration out of diagnostics. Errors are classified as CONFIG_ERROR or KAFKA_CONNECTION_ERROR, KAFKA_AUTH_ERROR, KAFKA_TLS_ERROR, KAFKA_TIMEOUT, KAFKA_TOPIC_AUTHORIZATION_ERROR, KAFKA_GROUP_AUTHORIZATION_ERROR, KAFKA_UNKNOWN_TOPIC, retaining redacted error messages without stack traces.
+
+Schema Registry is not required or called. The specification lists IAT `https://services.test-myecohub.ch/schemaregistry` and PROD `https://services.myecohub.ch/schemaregistry`; envelope/schema decoding is deferred. Consuming a Kafka record confirms transport receipt only. This milestone does not implement producing, SAF payload encryption/decryption, signature generation/validation, business interpretation or automatic TechUser enrolment. Tests use mocks and local fixtures; no real EcoHub brokers are contacted.

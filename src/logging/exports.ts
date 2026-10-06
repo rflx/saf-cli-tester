@@ -40,14 +40,14 @@ export class RunExports {
   private csv?: FileHandle;
   private summaryFile?: FileHandle;
   readonly files: string[] = [];
-  private constructor(private readonly redactor: Redactor) {}
-  static async open(format: ExportFormat | undefined, output: string | undefined, logs: string, runId: string, redactor: Redactor) {
+  private constructor(private readonly redactor: Redactor, private readonly fields: readonly string[]) {}
+  static async open(format: ExportFormat | undefined, output: string | undefined, logs: string, runId: string, redactor: Redactor, fields: readonly string[] = csvFields) {
     if (!format) {
       if (output !== undefined) throw new Error('CONFIG_ERROR: --output requires --export');
       return undefined;
     }
     if (output === undefined) await outsideRepository(logs);
-    const exports = new RunExports(redactor);
+    const exports = new RunExports(redactor, fields);
     const directory = output === undefined ? logs : expandPath(output);
     try {
       for (const kind of ['csv', 'summary'] as const) {
@@ -56,7 +56,7 @@ export class RunExports {
         await mkdir(dirname(file), { recursive: true, mode: 0o700 });
         const handle = await open(file, 'wx', 0o600);
         exports.files.push(file);
-        if (kind === 'csv') { exports.csv = handle; await handle.write(csvFields.join(',') + '\r\n'); }
+        if (kind === 'csv') { exports.csv = handle; await handle.write(fields.join(',') + '\r\n'); }
         else exports.summaryFile = handle;
       }
       return exports;
@@ -64,11 +64,11 @@ export class RunExports {
   }
   async record(record: Record<string, unknown>) {
     if (!this.csv) return;
-    const selected = Object.fromEntries(csvFields.map(key => [key, record[key]]));
-    const safe = this.redactor.sanitize(selected) as Record<string, unknown>;
-    await this.csv.write(csvFields.map(key => cell(safe[key])).join(',') + '\r\n');
+    const selected = Object.fromEntries(this.fields.map(key => [key, record[key]]));
+    const safe = this.redactor.sanitize({ ...selected, ...(record.transport === 'kafka' ? { transport: 'kafka' } : {}) }) as Record<string, unknown>;
+    await this.csv.write(this.fields.map(key => cell(safe[key])).join(',') + '\r\n');
   }
-  async summary(metadata: { runId: string; profile: string; environment: string; startTime: string; endTime: string }, stats: ReturnType<StatsCollector['summary']>) {
+  async summary(metadata: { runId: string; profile: string; environment: string; startTime: string; endTime: string }, stats: ReturnType<StatsCollector['summary']> | Record<string, unknown>) {
     await this.summaryFile?.write(JSON.stringify(this.redactor.sanitize({ ...metadata, ...stats }), null, 2) + '\n');
   }
   async close() { try { await this.csv?.close(); } finally { await this.summaryFile?.close(); } }

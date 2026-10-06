@@ -3,8 +3,12 @@
   "version": "0.1.0",
   "type": "module",
   "private": true,
-  "bin": { "saf-cli-tester": "dist/cli/index.js" },
-  "engines": { "node": ">=20.15.1" },
+  "bin": {
+    "saf-cli-tester": "dist/cli/index.js"
+  },
+  "engines": {
+    "node": ">=20.15.1"
+  },
   "scripts": {
     "dev": "npm run build --silent && node dist/cli/index.js",
     "build": "tsc -p tsconfig.build.json",
@@ -15,6 +19,14 @@
   "author": "",
   "license": "ISC",
   "description": "SAF connectivity diagnostics CLI",
-  "dependencies": { "commander": "13.1.0", "yaml": "^2.8.1", "zod": "^4.1.0" },
-  "devDependencies": { "@types/node": "^20.19.0", "typescript": "~5.9.3" }
+  "dependencies": {
+    "commander": "13.1.0",
+    "kafkajs": "^2.2.4",
+    "yaml": "^2.8.1",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.0",
+    "typescript": "~5.9.3"
+  }
 }
