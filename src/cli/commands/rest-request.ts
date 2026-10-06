@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import type { Command } from 'commander';
 import { configPaths, expandPath } from '../../config/paths.js';
 import { loadConfig } from '../../config/loader.js';
+import { restCredential } from '../../profiles/types.js';
 import { loadProfile } from '../../profiles/loader.js';
 import { OAuth2AuthProvider } from '../../auth/oauth2.js';
 import { MtlsAuthProvider } from '../../auth/mtls.js';
@@ -60,7 +61,8 @@ export async function runRequest(program: Command, options: Record<string,unknow
   catch (error) { await exports?.close(); throw error; }
   const stats = new StatsCollector(); const controller = new AbortController();
   const stop = () => controller.abort(); process.once('SIGINT', stop); process.once('SIGTERM', stop);
-  const auth = profile.auth.mode === 'oauth2' ? new OAuth2AuthProvider(profile.auth, redactor) : new MtlsAuthProvider(profile.auth, redactor);
+  const credential = restCredential(profile);
+  const auth = credential.mode === 'oauth2' ? new OAuth2AuthProvider(credential, redactor) : new MtlsAuthProvider(credential, redactor);
   try {
     logger.console(`Profile: ${profile.name}\nEnvironment: ${profile.environment}\nRun ID: ${runId}\nLog: ${paths.logs}/${runId}.jsonl`);
     if (exports) logger.console(`Exports: ${exports.files.join(', ')}`);

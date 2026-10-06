@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
-import { profileSchema, type Profile } from '../src/profiles/types.js';
+import { profileSchema, restCredential, type Profile } from '../src/profiles/types.js';
 import { configSchema } from '../src/config/schema.js';
 import { loadProfile, listProfiles } from '../src/profiles/loader.js';
 import { validateProfile } from '../src/profiles/validator.js';
@@ -47,7 +47,7 @@ test('profile loading, listing, path traversal and name binding', async () => te
   await assert.rejects(loadProfile(dir,'other'));
 }));
 test('configuration precedence and profile environment cannot be overridden', () => {
-  const p = profile(); p.rest.timeoutMs = 2000; p.rest.headers = {Accept:'profile'};
+  const p = profile(); p.rest!.timeoutMs = 2000; p.rest!.headers = {Accept:'profile'};
   const config = configSchema.parse({rest:{timeoutMs:1000,headers:{A:'default'}}});
   const request = resolveRequest(config,p,{path:'/a',timeoutMs:3000,headers:{B:'template'}},{timeoutMs:4000,headers:{C:'cli'}});
   assert.equal(request.timeoutMs,4000); assert.deepEqual(request.headers,{a:'default',accept:'profile',b:'template',c:'cli'});
@@ -85,9 +85,9 @@ test('JSONL logs are sanitized and created with private permissions', async () =
 test('OAuth discovery, credentials, caching and automatic expiry refresh', async () => {
   process.env.TEST_SAF_ID='fake-id'; process.env.TEST_SAF_SECRET='fake-password';
   let calls = 0; let now = 0; const r = new Redactor();
-  const p = profile(); if (p.auth.mode !== 'oauth2') throw new Error();
-  delete p.auth.tokenEndpoint; p.auth.openIdConfigurationUrl='https://example.invalid/discovery';
-  const auth = new OAuth2AuthProvider(p.auth,r,async (url,method,headers,body) => {
+  const p = profile(); const credential = restCredential(p); if (credential.mode !== 'oauth2') throw new Error();
+  delete credential.tokenEndpoint; credential.openIdConfigurationUrl='https://example.invalid/discovery';
+  const auth = new OAuth2AuthProvider(credential,r,async (url,method,headers,body) => {
     calls++;
     if (url.pathname === '/discovery') return {status:200,headers:{},durationMs:1,body:JSON.stringify({token_endpoint:'https://example.invalid/token'})};
     assert.equal(method,'POST'); assert.match(headers.Authorization!,/^Basic /); assert.equal(body,'grant_type=client_credentials');
@@ -99,17 +99,18 @@ test('OAuth discovery, credentials, caching and automatic expiry refresh', async
   assert.equal(r.text('fake-token-2 fake-password'),'[REDACTED] [REDACTED]');
 });
 test('OAuth failures do not expose token endpoint responses', async () => {
-  const p = profile(); if (p.auth.mode !== 'oauth2') throw new Error();
-  const auth = new OAuth2AuthProvider(p.auth,new Redactor(),async () => ({status:401,headers:{},body:'fake-password',durationMs:1}));
+  const p = profile(); const credential = restCredential(p); if (credential.mode !== 'oauth2') throw new Error();
+  const auth = new OAuth2AuthProvider(credential,new Redactor(),async () => ({status:401,headers:{},body:'fake-password',durationMs:1}));
   await assert.rejects(auth.prepareRequest({timeoutMs:100}), error => error instanceof Error && error.message.startsWith('AUTH_ERROR') && !error.message.includes('fake-password'));
 });
 test('mTLS loads lazily and reports unreadable or invalid certificates safely', async () => temporary(async dir => {
   process.env.TEST_P12_PASSWORD='fake-cert-password';
-  const p: Profile = {...profile(),auth:{mode:'mtls',p12Path:join(dir,'cert.p12'),p12PasswordEnv:'TEST_P12_PASSWORD'}};
-  if (p.auth.mode !== 'mtls') throw new Error();
-  const auth = new MtlsAuthProvider(p.auth,new Redactor());
+  const p = profileSchema.parse({...raw,auth:{mode:'mtls',p12Path:join(dir,'cert.p12'),p12PasswordEnv:'TEST_P12_PASSWORD'}});
+  const credential = restCredential(p);
+  if (credential.mode !== 'mtls') throw new Error();
+  const auth = new MtlsAuthProvider(credential,new Redactor());
   await assert.rejects(auth.prepareRequest(),/Cannot read/);
-  await writeFile(p.auth.p12Path,'invalid-test-certificate');
+  await writeFile(credential.p12Path,'invalid-test-certificate');
   await assert.rejects(auth.prepareRequest(),/certificate\/password combination/);
 }));
 test('local HTTP results, no redirects, timeouts and correlation IDs', async () => {
@@ -167,9 +168,9 @@ test('header precedence is case insensitive', () => {
   assert.deepEqual(request.headers,{accept:'cli'});
 });
 test('OAuth post authentication and invalid expiry', async () => {
-  const p = profile(); if (p.auth.mode !== 'oauth2') throw new Error(); p.auth.tokenAuthMethod='client_secret_post';
+  const p = profile(); const credential = restCredential(p); if (credential.mode !== 'oauth2') throw new Error(); credential.tokenAuthMethod='client_secret_post';
   process.env.TEST_SAF_ID='fake-id'; process.env.TEST_SAF_SECRET='fake-password';
-  const auth = new OAuth2AuthProvider(p.auth,new Redactor(),async (_url,_method,headers,body) => {
+  const auth = new OAuth2AuthProvider(credential,new Redactor(),async (_url,_method,headers,body) => {
     assert.equal(headers.Authorization,undefined); const form = new URLSearchParams(body);
     assert.equal(form.get('client_id'),'fake-id'); assert.equal(form.get('client_secret'),'fake-password');
     return {status:200,headers:{},body:JSON.stringify({token_type:'Bearer',access_token:'fake-token',expires_in:-1}),durationMs:1};

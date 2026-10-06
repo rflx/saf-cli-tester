@@ -1,27 +1,53 @@
 import { readFile } from 'node:fs/promises';
 import { createSecureContext } from 'node:tls';
 import { expandPath } from '../config/paths.js';
-import type { Profile } from './types.js';
+import type { Profile, OAuth2Credential, MtlsCredential } from './types.js';
 
 export function secret(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`CONFIG_ERROR: Missing environment variable ${name}`);
   return value;
 }
-export function oauthCredentials(auth: Extract<Profile['auth'], {mode:'oauth2'}>) {
+export function oauthCredentials(auth: OAuth2Credential) {
   return auth.clientId !== undefined && auth.clientSecret !== undefined
     ? { id: auth.clientId, password: auth.clientSecret }
     : { id: secret(auth.clientIdEnv!), password: secret(auth.clientSecretEnv!) };
 }
-export async function validateProfile(profile: Profile): Promise<void> {
-  if (profile.auth.mode === 'oauth2') {
-    oauthCredentials(profile.auth);
-  } else {
-    const passphrase = secret(profile.auth.p12PasswordEnv);
-    let pfx: Buffer;
-    try { pfx = await readFile(expandPath(profile.auth.p12Path)); }
-    catch { throw new Error('CONFIG_ERROR: Cannot read configured PKCS#12 certificate'); }
-    try { createSecureContext({ pfx, passphrase }); }
-    catch { throw new Error('CONFIG_ERROR: Cannot use PKCS#12 certificate/password combination'); }
+export function p12Password(auth: MtlsCredential): string {
+  return auth.p12Password !== undefined ? auth.p12Password : secret(auth.p12PasswordEnv!);
+}
+async function validateMtls(auth: MtlsCredential): Promise<void> {
+  const passphrase = p12Password(auth);
+  let pfx: Buffer;
+  try { pfx = await readFile(expandPath(auth.p12Path)); }
+  catch { throw new Error('CONFIG_ERROR: Cannot read credentials.mtls.p12Path; check the configured PKCS#12 certificate path'); }
+  try { createSecureContext({ pfx, passphrase }); }
+  catch { throw new Error('CONFIG_ERROR: Cannot use credentials.mtls PKCS#12 certificate/password combination; check p12Password or p12PasswordEnv'); }
+}
+
+export async function profileValidation(profile: Profile) {
+  const errors: Partial<Record<'oauth2' | 'mtls', string>> = {};
+  // Validate credentials independently and check shared certificate material once.
+  for (const mode of ['oauth2', 'mtls'] as const) {
+    try {
+      if (mode === 'oauth2' && profile.credentials.oauth2) oauthCredentials(profile.credentials.oauth2);
+      if (mode === 'mtls' && profile.credentials.mtls) await validateMtls(profile.credentials.mtls);
+    } catch (error) { errors[mode] = (error as Error).message; }
   }
+  const transport = (name: 'rest' | 'kafka') => {
+    const auth = profile[name]?.auth;
+    return { configured: !!auth, authentication: auth?.mode,
+      validation: !auth ? 'not configured' : errors[auth.mode] ? 'FAILED' : name === 'kafka' ? 'OK (local only)' : 'OK',
+      ...(auth && errors[auth.mode] ? { error: errors[auth.mode] } : {}) };
+  };
+  return {
+    profile: profile.name, environment: profile.environment,
+    credentials: { oauth2: profile.credentials.oauth2 ? 'configured' : 'not configured', mtls: profile.credentials.mtls ? 'configured' : 'not configured' },
+    rest: transport('rest'), kafka: transport('kafka'),
+    validation: Object.keys(errors).length ? 'FAILED' : 'OK', errors
+  };
+}
+export async function validateProfile(profile: Profile): Promise<void> {
+  const report = await profileValidation(profile);
+  if (report.validation === 'FAILED') throw new Error(Object.values(report.errors).join('; '));
 }

@@ -158,62 +158,64 @@ Kafka commands do not need to be implemented in Phase 1, but the architecture mu
 
 # 5. Profiles
 
-A profile represents exactly one SAF TechUser in exactly one SAF environment.
-
-Examples:
+One profile represents exactly one EcoHub SAF TechUser in exactly one environment. Identity is immutable during a command; use separate profiles for different TechUsers or environments. There is no CLI environment override.
 
 ```text
-support-company-a-iat
-support-company-a-prod
-broker-x-iat
-broker-x-prod
+Profile
+├── identity
+│   ├── name
+│   └── environment
+├── credentials
+│   ├── oauth2
+│   └── mtls
+├── rest
+│   ├── connection config
+│   └── auth reference
+└── kafka
+    ├── broker config
+    └── auth reference
 ```
 
-A profile MUST define its environment.
+`name` and `environment` remain top-level YAML fields. A profile may configure REST only, Kafka only, or both. At least one transport is required.
 
-Example:
+```text
+credentials.oauth2 -> usable by REST
+credentials.mtls   -> usable by REST and Kafka
+REST auth: oauth2 | mtls
+Kafka auth: mtls only
+```
 
 ```yaml
-name: broker-x-iat
-environment: IAT
+name: example-profile
+environment: IAT # or PROD
+
+credentials:
+  oauth2:
+    clientId: "..."
+    clientSecret: "..."
+    openIdConfigurationUrl: https://<openid-configuration-url>
+    tokenAuthMethod: client_secret_basic
+    scope: https://graph.microsoft.com/.default
+  mtls:
+    p12Path: ~/.config/saf-cli-tester/certificates/example.p12
+    p12Password: "..."
 
 rest:
-  baseUrl: https://example.invalid
+  baseUrl: https://<saf-base-url>
+  timeoutMs: 30000
+  auth:
+    mode: oauth2
+    credential: oauth2
 
-auth:
-  mode: oauth2
+kafka:
+  brokers:
+    - <kafka-broker>:9092
+  auth:
+    mode: mtls
+    credential: mtls
 ```
 
-Another profile:
-
-```yaml
-name: broker-x-prod
-environment: PROD
-
-rest:
-  baseUrl: https://example.invalid
-
-auth:
-  mode: mtls
-```
-
-A profile MUST NOT be dynamically switched between IAT and PROD.
-
-There is therefore normally no:
-
-```text
---env IAT
-```
-
-CLI parameter.
-
-Instead:
-
-```text
---profile broker-x-iat
-```
-
-determines the environment.
+Auth references resolve to configured credentials of the matching type. The typed names `oauth2` and `mtls` are the supported references. REST commands inspect `rest.auth` automatically; future Kafka commands will inspect `kafka.auth`. No per-command auth flag is needed. Kafka configuration and local validation are implemented as preparation only; broker connections and Kafka commands remain future work.
 
 ---
 
@@ -259,48 +261,44 @@ The application should use standard home-directory expansion and must not assume
 
 # 7. Separation of Profile and Secrets
 
-Where practical, non-sensitive configuration should be separated from sensitive values.
+Credentials are reusable top-level profile data under `credentials`. OAuth2 accepts exactly one complete pair: `clientId` + `clientSecret`, or `clientIdEnv` + `clientSecretEnv`. Direct/environment mixing is rejected. Token discovery, optional scope, token authentication method and token caching remain unchanged.
 
-Example profile:
+mTLS accepts `p12Path` and exactly one of direct `p12Password` or `p12PasswordEnv`. Empty direct passwords are allowed. Paths expand `~/`; relative paths use the working directory. Shared certificate material is validated locally and loaded lazily for requests. No certificate material is logged.
+
+Profiles and real secrets remain outside Git. Central recursive redaction protects nested credentials and registered environment-backed values. `profiles show` displays the normalized model, with client ID, client secret and P12 password redacted. `profiles validate` reports each configured transport and checks configured credentials without network access.
+
+### Migration from legacy profiles
+
+Top-level `auth` is deprecated but remains accepted for existing REST profiles. It is normalized internally and `profiles show` displays the new structure. Move all credential fields under `credentials.<mode>` and replace top-level `auth` with `rest.auth`. Combining legacy `auth` with `credentials` or `rest.auth` is rejected with a migration error.
+
+Old:
 
 ```yaml
-name: broker-x-iat
-environment: IAT
-
 rest:
   baseUrl: https://example.invalid
-  timeoutMs: 30000
-
 auth:
   mode: oauth2
-  openIdConfigurationUrl: https://example.invalid/.well-known/openid-configuration
-  clientIdEnv: SAF_BROKER_X_IAT_CLIENT_ID
-  clientSecretEnv: SAF_BROKER_X_IAT_CLIENT_SECRET
+  clientIdEnv: SAF_CLIENT_ID
+  clientSecretEnv: SAF_CLIENT_SECRET
+  tokenEndpoint: https://example.invalid/token
 ```
 
-Sensitive variables can then be loaded locally.
-
-Example local secret file:
-
-```text
-SAF_BROKER_X_IAT_CLIENT_ID=...
-SAF_BROKER_X_IAT_CLIENT_SECRET=...
-```
-
-For mTLS:
+New (keep `name` and `environment` unchanged):
 
 ```yaml
-name: broker-x-prod
-environment: PROD
-
+credentials:
+  oauth2:
+    clientIdEnv: SAF_CLIENT_ID
+    clientSecretEnv: SAF_CLIENT_SECRET
+    tokenEndpoint: https://example.invalid/token
 rest:
   baseUrl: https://example.invalid
-
-auth:
-  mode: mtls
-  p12Path: ~/.config/saf-cli-tester/certificates/broker-x-prod.p12
-  p12PasswordEnv: SAF_BROKER_X_PROD_P12_PASSWORD
+  auth:
+    mode: oauth2
+    credential: oauth2
 ```
+
+For legacy mTLS, move `p12Path` and `p12PasswordEnv` into `credentials.mtls` and set `rest.auth` to `mode: mtls`, `credential: mtls`.
 
 ---
 
@@ -369,10 +367,15 @@ PKCS#12 / .p12
 Configuration example:
 
 ```yaml
-auth:
-  mode: mtls
-  p12Path: ~/.config/saf-cli-tester/certificates/example.p12
-  p12PasswordEnv: SAF_CERT_PASSWORD
+credentials:
+  mtls:
+    p12Path: ~/.config/saf-cli-tester/certificates/example.p12
+    p12PasswordEnv: SAF_CERT_PASSWORD
+rest:
+  baseUrl: https://example.invalid
+  auth:
+    mode: mtls
+    credential: mtls
 ```
 
 Requirements:
@@ -697,10 +700,10 @@ saf-cli-tester profiles list
 Example:
 
 ```text
-NAME                  ENV    AUTH
-broker-x-iat          IAT    oauth2
-broker-x-prod         PROD   mtls
-support-test          IAT    oauth2
+NAME                  ENV    REST    KAFKA
+broker-x-iat          IAT    oauth2  mtls
+broker-x-prod         PROD   mtls    mtls
+support-test          IAT    oauth2  not configured
 ```
 
 Show profile without secrets:

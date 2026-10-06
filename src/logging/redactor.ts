@@ -6,6 +6,9 @@ export class Redactor {
     if (!value || typeof value !== 'object' || seen.has(value)) return;
     seen.add(value);
     for (const [key, child] of Object.entries(value)) {
+      if (/^(clientIdEnv|clientSecretEnv|p12PasswordEnv)$/i.test(key) && typeof child === 'string' && process.env[child]) {
+        this.register({ secret: process.env[child] });
+      }
       if (sensitive.test(key.replace(/[-_]/g, '')) && typeof child === 'string') {
         this.add(child);
         this.add(encodeURIComponent(child));

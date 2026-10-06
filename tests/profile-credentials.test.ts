@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { profileSchema } from '../src/profiles/types.js';
+import { profileSchema, restCredential } from '../src/profiles/types.js';
 import { validateProfile } from '../src/profiles/validator.js';
 import { loadProfile } from '../src/profiles/loader.js';
 import { Redactor } from '../src/logging/redactor.js';
@@ -36,9 +36,10 @@ test('OAuth credential schema accepts complete direct or environment pairs only'
 test('direct credentials are used for both OAuth token authentication methods and errors are safe', async () => {
   for (const tokenAuthMethod of ['client_secret_basic','client_secret_post'] as const) {
     const p = profileSchema.parse({...direct,auth:{...direct.auth,tokenAuthMethod}});
-    if (p.auth.mode !== 'oauth2') throw new Error();
+    const credential = restCredential(p);
+    if (credential.mode !== 'oauth2') throw new Error();
     const r = new Redactor();
-    const auth = new OAuth2AuthProvider(p.auth,r,async (_url,_method,headers,body) => {
+    const auth = new OAuth2AuthProvider(credential,r,async (_url,_method,headers,body) => {
       if (tokenAuthMethod === 'client_secret_basic') assert.equal(headers.Authorization,`Basic ${Buffer.from(`${encodeURIComponent('dummy-client')}:${encodeURIComponent(password)}`).toString('base64')}`);
       else assert.equal(new URLSearchParams(body).get('client_secret'),password);
       throw new Error(password);
@@ -73,7 +74,7 @@ test('profiles show and validate support direct YAML and never disclose secrets 
     await mkdir(join(dir,'profiles'));
     await writeFile(join(dir,'profiles','direct.yaml'),`name: direct\nenvironment: IAT\nrest:\n  baseUrl: https://example.invalid\nauth:\n  mode: oauth2\n  tokenEndpoint: https://example.invalid/token\n  clientId: dummy-client\n  clientSecret: ${JSON.stringify(password)}\n`);
     const shown = await run('show');
-    assert.equal(JSON.parse(shown.stdout).auth.clientSecret,'[REDACTED]'); assert.equal(shown.stderr,'');
+    assert.equal(JSON.parse(shown.stdout).credentials.oauth2.clientSecret,'[REDACTED]'); assert.equal(shown.stderr,'');
     assert.equal(JSON.parse((await run('validate')).stdout).validation,'OK');
     await writeFile(join(dir,'profiles','direct.yaml'),JSON.stringify({...direct,auth:{...direct.auth,clientIdEnv:'PROFILE_TEST_ID'}}));
     await assert.rejects(run('validate'), error => {
@@ -89,9 +90,10 @@ test('OAuth scope validates and is form encoded for both token authentication me
   for (const tokenAuthMethod of ['client_secret_basic', 'client_secret_post'] as const) {
     const p = profileSchema.parse({ ...direct, auth: { ...direct.auth, scope, tokenAuthMethod } });
     await validateProfile(p);
-    if (p.auth.mode !== 'oauth2') throw new Error();
+    const credential = restCredential(p);
+    if (credential.mode !== 'oauth2') throw new Error();
     const redactor = new Redactor();
-    const auth = new OAuth2AuthProvider(p.auth, redactor, async (_url, method, headers, body) => {
+    const auth = new OAuth2AuthProvider(credential, redactor, async (_url, method, headers, body) => {
       assert.equal(method, 'POST');
       assert.equal(headers['Content-Type'], 'application/x-www-form-urlencoded');
       assert.equal(new URLSearchParams(body).get('scope'), scope);
@@ -112,10 +114,11 @@ test('OAuth HTTP diagnostics reach logs with only sanitized safe server fields',
   try {
     for (const stage of ['token', 'discovery'] as const) {
       const p = profileSchema.parse({ ...direct, auth: { ...direct.auth, scope } });
-      if (p.auth.mode !== 'oauth2') throw new Error();
-      if (stage === 'discovery') { delete p.auth.tokenEndpoint; p.auth.openIdConfigurationUrl = 'https://example.invalid/discovery'; }
+      const credential = restCredential(p);
+      if (credential.mode !== 'oauth2') throw new Error();
+      if (stage === 'discovery') { delete credential.tokenEndpoint; credential.openIdConfigurationUrl = 'https://example.invalid/discovery'; }
       const r = new Redactor();
-      const auth = new OAuth2AuthProvider(p.auth, r, async () => ({
+      const auth = new OAuth2AuthProvider(credential, r, async () => ({
         status: 401, headers: {}, durationMs: 1,
         body: JSON.stringify({ error: 'invalid_client', error_description: `Rejected ${password} ${encodeURIComponent(password)} leaked-token\n`, clientSecret: password, access_token: 'leaked-token', arbitrary: 'omit-this' })
       }));

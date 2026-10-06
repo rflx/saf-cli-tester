@@ -10,6 +10,7 @@ import { responseDiagnostics, type ResponseBodyDiagnostic } from '../diagnostics
 import { correlation } from '../diagnostics/correlation.js';
 
 export function resolveRequest(config: AppConfig, profile: Profile, template: RequestOptions = {}, cli: RequestOptions = {}) {
+  if (!profile.rest) throw new Error('CONFIG_ERROR: Profile has no REST transport; configure rest.baseUrl and rest.auth');
   const defined = Object.fromEntries(Object.entries(cli).filter(([,v]) => v !== undefined));
   const headers: Record<string,string> = {};
   for (const layer of [config.rest.headers, profile.rest.headers, template.headers, cli.headers]) {

@@ -70,7 +70,61 @@ A profile represents one TechUser and is permanently bound to exactly one enviro
 
 Save profiles as `<profile-name>.yaml` in the local `profiles/` directory. The filename must match the YAML `name`. Names start with a letter or number and contain only letters, numbers, `_` or `-`.
 
-Every profile requires `name`, `environment`, `rest.baseUrl` and `auth`. Profile `rest` also accepts optional `timeoutMs` and `headers`. URLs require HTTPS without embedded credentials or fragments.
+Every profile requires `name`, `environment`, reusable `credentials` and at least one transport (`rest`, `kafka`, or both). A profile can hold both OAuth2 and mTLS credentials. REST supports either; native Kafka supports mTLS only. The same `credentials.mtls` can be reused by both transports. REST commands (`rest request`, `rest poll`, `run`) select credentials automatically from `rest.auth`; users normally do not specify an auth mode in commands. Future Kafka commands will use `kafka.auth`.
+
+Profile `rest` requires `baseUrl` and `auth`, and accepts optional `timeoutMs` and `headers`. URLs require HTTPS without embedded credentials or fragments.
+
+Example profile (Kafka is configuration preparation only; Kafka commands are not implemented):
+
+```yaml
+name: example-profile
+environment: IAT # or PROD
+
+credentials:
+  oauth2:
+    clientId: "..."
+    clientSecret: "..."
+    openIdConfigurationUrl: https://<openid-configuration-url>
+    tokenAuthMethod: client_secret_basic
+    scope: https://graph.microsoft.com/.default
+  mtls:
+    p12Path: ~/.config/saf-cli-tester/certificates/example.p12
+    p12Password: "..."
+
+rest:
+  baseUrl: https://<saf-base-url>
+  timeoutMs: 30000
+  auth:
+    mode: oauth2
+    credential: oauth2
+
+kafka:
+  brokers:
+    - <kafka-broker>:9092
+  auth:
+    mode: mtls
+    credential: mtls
+```
+
+REST using OAuth2:
+
+```yaml
+rest:
+  auth:
+    mode: oauth2
+    credential: oauth2
+```
+
+REST using mTLS:
+
+```yaml
+rest:
+  auth:
+    mode: mtls
+    credential: mtls
+```
+
+These snippets select credentials within a complete profile; include `rest.baseUrl` when configuring REST.
 
 ```sh
 npm run dev -- profiles list
@@ -78,7 +132,7 @@ npm run dev -- profiles show example-profile
 npm run dev -- profiles validate example-profile
 ```
 
-`list` shows names, environments and authentication modes. `show` prints sanitized configuration, including `[REDACTED]` for a direct client secret. `validate` checks the schema and credential availability; for mTLS it also checks certificate readability and whether Node can use the certificate/password combination. **Validation performs no authentication or network request.** See [profiles](docs/profiles.md).
+`list` shows names, environments and authentication modes per transport. `show` prints sanitized configuration, including `[REDACTED]` for a direct client secret. `validate` reports configured credentials and each transport independently, checking the schema and credential availability; for mTLS it also checks certificate readability and whether Node can use the certificate/password combination. **Validation performs no authentication or network request.** See [profiles](docs/profiles.md).
 
 ## OAuth2
 
@@ -87,16 +141,19 @@ Example external profile, `~/.config/saf-cli-tester/profiles/example-profile.yam
 ```yaml
 name: example-profile
 environment: IAT # or PROD; choose the environment for this TechUser
+credentials:
+  oauth2:
+    openIdConfigurationUrl: https://<openid-configuration-url>
+    clientIdEnv: SAF_EXAMPLE_CLIENT_ID
+    clientSecretEnv: SAF_EXAMPLE_CLIENT_SECRET
+    scope: https://graph.microsoft.com/.default
+    tokenAuthMethod: client_secret_basic
 rest:
   baseUrl: https://<saf-base-url>
   timeoutMs: 30000
-auth:
-  mode: oauth2
-  openIdConfigurationUrl: https://<openid-configuration-url>
-  clientIdEnv: SAF_EXAMPLE_CLIENT_ID
-  clientSecretEnv: SAF_EXAMPLE_CLIENT_SECRET
-  scope: https://graph.microsoft.com/.default
-  tokenAuthMethod: client_secret_basic
+  auth:
+    mode: oauth2
+    credential: oauth2
 ```
 
 Use `openIdConfigurationUrl` for discovery or `tokenEndpoint` for an explicit token URL. If both are supplied, `tokenEndpoint` wins. Verify trusted endpoints before supplying credentials: discovery can return a token endpoint on another HTTPS origin.
@@ -117,12 +174,15 @@ Example external profile, `~/.config/saf-cli-tester/profiles/techuser-profile.ya
 ```yaml
 name: techuser-profile
 environment: IAT # or PROD; choose the environment for this TechUser
+credentials:
+  mtls:
+    p12Path: ~/.config/saf-cli-tester/certificates/techuser-profile.p12
+    p12PasswordEnv: SAF_EXAMPLE_P12_PASSWORD
 rest:
   baseUrl: https://<saf-base-url>
-auth:
-  mode: mtls
-  p12Path: ~/.config/saf-cli-tester/certificates/techuser-profile.p12
-  p12PasswordEnv: SAF_EXAMPLE_P12_PASSWORD
+  auth:
+    mode: mtls
+    credential: mtls
 ```
 
 Start with [the mTLS example](examples/profile.mtls.example.yaml). Store the real P12 outside the repository and export the password variable through your shell or secret manager. Prefer absolute or `~/` certificate paths; relative paths resolve from the working directory.
@@ -131,7 +191,42 @@ Start with [the mTLS example](examples/profile.mtls.example.yaml). Store the rea
 npm run dev -- profiles validate techuser-profile
 ```
 
+Use exactly one of direct `p12Password` (an empty password is allowed) or `p12PasswordEnv`; mixing is rejected.
+
 Certificate material is loaded only during validation or a request and is never logged. Server certificate verification remains enabled.
+
+### Migration from legacy profiles
+
+Top-level `auth` is deprecated but remains accepted for existing REST profiles. It is normalized internally and `profiles show` displays the new structure. Move all credential fields under `credentials.<mode>` and replace top-level `auth` with `rest.auth`. Combining legacy `auth` with `credentials` or `rest.auth` is rejected with a migration error.
+
+Old:
+
+```yaml
+rest:
+  baseUrl: https://example.invalid
+auth:
+  mode: oauth2
+  clientIdEnv: SAF_CLIENT_ID
+  clientSecretEnv: SAF_CLIENT_SECRET
+  tokenEndpoint: https://example.invalid/token
+```
+
+New (keep `name` and `environment` unchanged):
+
+```yaml
+credentials:
+  oauth2:
+    clientIdEnv: SAF_CLIENT_ID
+    clientSecretEnv: SAF_CLIENT_SECRET
+    tokenEndpoint: https://example.invalid/token
+rest:
+  baseUrl: https://example.invalid
+  auth:
+    mode: oauth2
+    credential: oauth2
+```
+
+For legacy mTLS, move `p12Path` and `p12PasswordEnv` into `credentials.mtls` and set `rest.auth` to `mode: mtls`, `credential: mtls`.
 
 ## REST Requests
 

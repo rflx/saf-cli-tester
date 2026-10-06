@@ -1,4 +1,4 @@
-import type { Profile } from '../profiles/types.js';
+import type { OAuth2Credential } from '../profiles/types.js';
 import { oauthCredentials } from '../profiles/validator.js';
 import { httpsUrl } from '../config/schema.js';
 import { send } from '../rest/client.js';
@@ -21,7 +21,7 @@ export class OAuth2AuthProvider implements AuthProvider {
   private token?: string;
   private expiresAt = 0;
   private endpoint?: string;
-  constructor(private readonly auth: Extract<Profile['auth'], {mode:'oauth2'}>, private readonly redactor: Redactor, private readonly transport = send, private readonly clock = Date.now) {}
+  constructor(private readonly auth: OAuth2Credential, private readonly redactor: Redactor, private readonly transport = send, private readonly clock = Date.now) {}
   private httpError(stage: OAuth2Diagnostics['stage'], response: { status: number; body: string }) {
     const diagnostics: OAuth2Diagnostics = { stage, statusCode: response.status };
     try {

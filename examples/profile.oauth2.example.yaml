@@ -1,12 +1,15 @@
-name: example-iat
-environment: IAT
+name: example-profile
+environment: IAT # or PROD
+credentials:
+  oauth2:
+    openIdConfigurationUrl: https://example.invalid/.well-known/openid-configuration
+    clientIdEnv: SAF_EXAMPLE_CLIENT_ID
+    clientSecretEnv: SAF_EXAMPLE_CLIENT_SECRET
+    scope: https://graph.microsoft.com/.default
+    tokenAuthMethod: client_secret_basic
 rest:
   baseUrl: https://example.invalid
   timeoutMs: 30000
-auth:
-  mode: oauth2
-  openIdConfigurationUrl: https://example.invalid/.well-known/openid-configuration
-  clientIdEnv: SAF_EXAMPLE_CLIENT_ID
-  clientSecretEnv: SAF_EXAMPLE_CLIENT_SECRET
-  scope: https://graph.microsoft.com/.default
-  tokenAuthMethod: client_secret_basic
+  auth:
+    mode: oauth2
+    credential: oauth2

@@ -1,16 +1,16 @@
 import { readFile } from 'node:fs/promises';
 import { createSecureContext } from 'node:tls';
 import { expandPath } from '../config/paths.js';
-import { secret } from '../profiles/validator.js';
-import type { Profile } from '../profiles/types.js';
+import { p12Password } from '../profiles/validator.js';
+import type { MtlsCredential } from '../profiles/types.js';
 import type { Redactor } from '../logging/redactor.js';
 import type { AuthProvider, AuthResult } from './types.js';
 export class MtlsAuthProvider implements AuthProvider {
   private result?: AuthResult;
-  constructor(private readonly auth: Extract<Profile['auth'], {mode:'mtls'}>, private readonly redactor: Redactor) {}
+  constructor(private readonly auth: MtlsCredential, private readonly redactor: Redactor) {}
   async prepareRequest(): Promise<AuthResult> {
     if (!this.result) {
-      const passphrase = secret(this.auth.p12PasswordEnv); this.redactor.add(passphrase);
+      const passphrase = p12Password(this.auth); this.redactor.add(passphrase);
       let pfx: Buffer;
       try { pfx = await readFile(expandPath(this.auth.p12Path)); }
       catch { throw new Error('AUTH_ERROR: Cannot read configured PKCS#12 certificate'); }
