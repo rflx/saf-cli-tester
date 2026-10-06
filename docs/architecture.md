@@ -1127,3 +1127,24 @@ Security takes precedence over convenience.
 # Native Kafka transport
 
 Kafka commands use Profile/Auth v2 and MtlsAuthProvider without OAuth2 broker authentication. `src/kafka/client.ts` isolates KafkaJS configuration and bounded admin/consumer lifecycle; `src/kafka/diagnostics.ts` provides transport metadata and Kafka statistics. Central Logger, Redactor, run IDs and RunExports are shared with REST; export columns are selected per transport and REST defaults are preserved. Explicit batch offset resolution prevents committing records beyond diagnostic bounds. See [Kafka](kafka.md) for EcoHub SAF Message Broker System 1.2.0 scope and dependency evaluation.
+
+## Profile-wide shared request credentials
+
+```text
+TechUser Profile
+├── identity: name, environment
+├── credentials
+│   ├── shared: licenceKey, password
+│   ├── oauth2
+│   └── mtls
+├── REST: base URL, auth reference
+└── Kafka: brokers, auth reference
+
+credentials.shared -> request templates only when explicitly referenced
+credentials.oauth2 -> REST authentication
+credentials.mtls   -> REST authentication and Kafka authentication
+REST auth: oauth2 | mtls
+Kafka auth: mtls only
+```
+
+Shared request credentials are optional API body data, separate from transport authentication. The resolver allows only the two shared profile fields, registers secrets before authentication, and generates UUID/time immediately before each individual HTTP request. No shared credentials are automatically injected into headers or Kafka. See [templates](templates.md) for the runtime boundary and failure behavior.

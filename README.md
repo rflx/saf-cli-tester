@@ -134,6 +134,51 @@ npm run dev -- profiles validate example-profile
 
 `list` shows names, environments and authentication modes per transport. `show` prints sanitized configuration, including `[REDACTED]` for a direct client secret. `validate` reports configured credentials and each transport independently, checking the schema and credential availability; for mTLS it also checks certificate readability and whether Node can use the certificate/password combination. **Validation performs no authentication or network request.** See [profiles](docs/profiles.md).
 
+
+## Shared TechUser credentials
+
+Profiles may optionally store profile-wide shared request credentials. These are API data fields, separate from transport authentication (REST: OAuth2 or mTLS; Kafka: mTLS only). They are never automatically sent to REST or Kafka. Templates insert them only through explicit placeholders. Both values are secrets and are always redacted.
+
+```yaml
+credentials:
+  shared:
+    licenceKey: "..."
+    password: "..."
+```
+
+Alternatively, use exactly one complete environment-backed pair:
+
+```yaml
+credentials:
+  shared:
+    licenceKeyEnv: SAF_LICENCE_KEY
+    passwordEnv: SAF_TECHUSER_PASSWORD
+```
+
+Both values must be nonempty. Mixed direct/environment fields and partial pairs are rejected; there is no precedence rule. `profiles validate` checks environment availability locally. Missing shared credentials do not invalidate ordinary REST or Kafka profiles.
+
+## Template placeholders
+
+Supported values are `{{uuid}}`, `{{nowUtc}}`, `{{env:VARIABLE_NAME}}`, `{{profile:credentials.shared.licenceKey}}` and `{{profile:credentials.shared.password}}`. UUID and UTC timestamp are regenerated immediately before each request, including every polling iteration. Repeated references within one request share the same UUID/time.
+
+Profile access is intentionally allowlisted to those two shared fields. Other profile references, unknown placeholders and malformed placeholders fail with `CONFIG_ERROR` before authentication or network access. A missing shared value identifies its configuration path without exposing secrets. Resolution is recursive in body objects, arrays, strings and permitted header values. No expressions or arbitrary property traversal are supported. See [template details](docs/templates.md).
+
+## General API examples
+
+The generic templates work with any compatible TechUser profile using REST OAuth2 or mTLS:
+
+```sh
+npm run dev -- run \
+  --profile <profile-name> \
+  --request examples/saf-receivers.yaml
+
+npm run dev -- run \
+  --profile <profile-name> \
+  --request examples/saf-insurers.yaml
+```
+
+The profile supplies environment, REST base URL, transport authentication and shared credentials. The template supplies method, API path, body schema, generated request ID/time and user agent. No `onBehalfOf` is added. PROD writes require `--allow-prod-write`; mutating polls require an explicit interval.
+
 ## OAuth2
 
 Example external profile, `~/.config/saf-cli-tester/profiles/example-profile.yaml`:

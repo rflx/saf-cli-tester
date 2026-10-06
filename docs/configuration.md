@@ -26,3 +26,7 @@ Missing application config uses defaults; malformed/unreadable existing config f
 # Native Kafka configuration
 
 Kafka uses existing Profile/Auth v2 brokers and mTLS credentials. Consume requires `--topic`, an explicit SAF `--group-id` and `--count` or `--duration`. `--client-id` accepts a UUID, otherwise one is generated. `--from-beginning` defaults false; `--include-payload` defaults false; `--max-payload-bytes` defaults 65536. Optional `--export`/`--output` follow existing export rules. See [Kafka](kafka.md) for complete behavior.
+
+## Shared request credentials and profile placeholders
+
+Optional `credentials.shared` stores secret `licenceKey` and `password` values, or the complete `licenceKeyEnv`/`passwordEnv` pair. Partial, empty or mixed pairs are invalid. They are separate from REST OAuth2/mTLS and Kafka mTLS authentication and are never sent automatically. Only explicit `{{profile:credentials.shared.licenceKey}}` and `{{profile:credentials.shared.password}}` references can access profile data. Missing values fail before network access with `CONFIG_ERROR`. Both secrets and encoded forms are centrally redacted, including echoed diagnostics; request payloads are not logged. See [templates](templates.md) for execution timing, polling and generic General API examples.

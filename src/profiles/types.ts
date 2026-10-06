@@ -2,6 +2,15 @@ import { z } from 'zod';
 import { httpsUrl, headersSchema } from '../config/schema.js';
 
 const envName = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/);
+const shared = z.object({
+  licenceKey: z.string().refine(v => v.trim().length > 0).optional(), password: z.string().refine(v => v.trim().length > 0).optional(),
+  licenceKeyEnv: envName.optional(), passwordEnv: envName.optional()
+}).strict().refine(a =>
+  (a.licenceKey !== undefined && a.password !== undefined && a.licenceKeyEnv === undefined && a.passwordEnv === undefined) ||
+  (a.licenceKeyEnv !== undefined && a.passwordEnv !== undefined && a.licenceKey === undefined && a.password === undefined),
+  'Shared credentials require licenceKey + password or licenceKeyEnv + passwordEnv; mixing is forbidden'
+);
+export type SharedCredential = z.infer<typeof shared>;
 const oauthFields = { clientId: z.string().min(1).optional(), clientSecret: z.string().min(1).optional(),
   clientIdEnv: envName.optional(), clientSecretEnv: envName.optional(),
   openIdConfigurationUrl: httpsUrl.optional(), tokenEndpoint: httpsUrl.optional(), scope: z.string().refine(value => value.trim().length > 0, 'OAuth scope must be nonempty').optional(),
@@ -23,7 +32,7 @@ const kafkaAuth = z.object({ mode: z.literal('mtls'), credential: z.string().min
 const rest = z.object({ baseUrl: httpsUrl, timeoutMs: z.number().int().positive().optional(), headers: headersSchema.optional(), auth: restAuth }).strict();
 const current = z.object({
   name: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/), environment: z.enum(['IAT', 'PROD']),
-  credentials: z.object({ oauth2: oauth.optional(), mtls: mtls.optional() }).strict(),
+  credentials: z.object({ shared: shared.optional(), oauth2: oauth.optional(), mtls: mtls.optional() }).strict(),
   rest: rest.optional(),
   kafka: z.object({ brokers: z.array(z.string().regex(/^[^\s/:]+:\d+$/, 'Broker must be host:port').refine(value => { const port = Number(value.split(':').at(-1)); return port > 0 && port <= 65535; }, 'Broker port must be 1–65535')).min(1), auth: kafkaAuth }).strict().optional()
 }).strict().superRefine((p, ctx) => {

@@ -28,7 +28,7 @@ export function resolveRequest(config: AppConfig, profile: Profile, template: Re
   }
   if (options.body !== undefined && options.bodyFile !== undefined) throw new Error('CONFIG_ERROR: Choose body or body-file');
   if (['GET','HEAD'].includes(options.method) && (options.body !== undefined || options.bodyFile)) throw new Error('CONFIG_ERROR: GET/HEAD cannot have a body');
-  return { ...options, url, timeoutMs: options.timeoutMs ?? 30000 };
+  return { ...options, profile, url, timeoutMs: options.timeoutMs ?? 30000 };
 }
 export function enforceProdSafety(profile: Profile, method: string, allowed: boolean) {
   if (profile.environment === 'PROD' && !['GET','HEAD','OPTIONS'].includes(method) && !allowed) throw new Error('CONFIG_ERROR: PROD writes require --allow-prod-write');
@@ -53,7 +53,7 @@ export async function executeRequest(auth: AuthProvider, request: ReturnType<typ
   try {
     const parsedBody = templateBody(request.body);
     const jsonText = typeof request.body === 'string' && parsedBody !== request.body;
-    const resolve = preparePlaceholders({ headers: request.headers, body: parsedBody }, redactor);
+    const resolve = preparePlaceholders({ headers: request.headers, body: parsedBody }, redactor, request.profile);
     const prepared = await auth.prepareRequest({ timeoutMs: request.timeoutMs, signal });
     const runtime = resolve() as { headers: Record<string, string>; body: unknown };
     for (const [name, value] of Object.entries(runtime.headers)) {

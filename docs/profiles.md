@@ -89,3 +89,7 @@ OAuth2 `credentials.oauth2.scope` is optional and must be a nonempty string when
 # Native Kafka profile
 
 Profile/Auth v2 already supports Kafka; no new profile fields or consumer defaults are introduced. Native Kafka requires `kafka.brokers`, `kafka.auth.mode: mtls`, `kafka.auth.credential: mtls` and configured `credentials.mtls`. OAuth2 is rejected. Environment comes exclusively from the profile. `profiles validate` remains local, including P12 readability/password checks; live connectivity uses `kafka connection-test`. See [Kafka](kafka.md).
+
+## Shared request credentials and profile placeholders
+
+Optional `credentials.shared` stores secret `licenceKey` and `password` values, or the complete `licenceKeyEnv`/`passwordEnv` pair. Partial, empty or mixed pairs are invalid. They are separate from REST OAuth2/mTLS and Kafka mTLS authentication and are never sent automatically. Only explicit `{{profile:credentials.shared.licenceKey}}` and `{{profile:credentials.shared.password}}` references can access profile data. Missing values fail before network access with `CONFIG_ERROR`. Both secrets and encoded forms are centrally redacted, including echoed diagnostics; request payloads are not logged. See [templates](templates.md) for execution timing, polling and generic General API examples.

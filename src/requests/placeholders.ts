@@ -1,8 +1,11 @@
+import type { Profile } from '../profiles/types.js';
+import { sharedCredential } from '../profiles/validator.js';
 import { randomUUID } from 'node:crypto';
 import type { Redactor } from '../logging/redactor.js';
 
 // Replacement values are never interpreted as templates.
-export function preparePlaceholders(value: unknown, redactor: Redactor): () => unknown {
+export function preparePlaceholders(value: unknown, redactor: Redactor, profile?: Profile): () => unknown {
+  if (profile) redactor.register(profile);
   const compile = (input: unknown): ((uuid: string, now: string) => unknown) => {
     if (typeof input === 'string') {
       const parts: Array<string | ((uuid: string, now: string) => string)> = [];
@@ -14,6 +17,13 @@ export function preparePlaceholders(value: unknown, redactor: Redactor): () => u
         const token = match[1]!;
         if (token === 'uuid') parts.push(uuid => uuid);
         else if (token === 'nowUtc') parts.push((_uuid, now) => now);
+        else if (token.startsWith('profile:')) {
+          const key = token === 'profile:credentials.shared.licenceKey' ? 'licenceKey'
+            : token === 'profile:credentials.shared.password' ? 'password' : undefined;
+          if (!key) throw new Error('CONFIG_ERROR: Profile placeholder is not allowlisted');
+          const secret = sharedCredential(profile?.credentials.shared, key);
+          redactor.register({ secret }); parts.push(secret);
+        }
         else if (/^env:[A-Za-z_][A-Za-z0-9_]*$/.test(token)) {
           const name = token.slice(4); const secret = process.env[name];
           if (!secret) throw new Error(`CONFIG_ERROR: Environment variable ${name} is not set or is empty`);

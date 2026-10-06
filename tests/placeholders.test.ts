@@ -82,6 +82,7 @@ test('static bodies and template files remain compatible', async () => {
 
 test('poll resolves each request freshly and protects echoed secrets in diagnostics and exports', async () => {
   process.env.SAF_PLACEHOLDER_POLL = 'dummy-runtime-licence';
+  process.env.SAF_PLACEHOLDER_PASSWORD = 'dummy-independent-shared-password';
   const received: Array<{ id: string; time: string; secret: string; header?: string }> = [];
   const rawBodies: string[] = [];
   const server = createServer(async (req, res) => {
@@ -89,7 +90,7 @@ test('poll resolves each request freshly and protects echoed secrets in diagnost
     rawBodies.push(body);
     received.push({ ...JSON.parse(body), header: req.headers['x-runtime'] });
     res.writeHead(500, { 'content-type': 'application/json', 'x-request-id': process.env.SAF_PLACEHOLDER_POLL ?? 'static' });
-    res.end(JSON.stringify({ echoed: process.env.SAF_PLACEHOLDER_POLL }));
+    res.end(JSON.stringify({ echoed: process.env.SAF_PLACEHOLDER_POLL, echoedPassword: 'dummy-independent-shared-password' }));
   });
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const address = server.address(); assert.ok(address && typeof address !== 'string');
@@ -99,7 +100,8 @@ test('poll resolves each request freshly and protects echoed secrets in diagnost
   const stats = new StatsCollector();
   let preparations = 0;
   const auth = { prepareRequest: async () => { preparations++; return { headers: {} }; } };
-  const request = { ...resolveRequest(configSchema.parse({}), profile, { method: 'POST', path: '/general', headers: { 'X-Runtime': '{{uuid}}' }, body: { id: '{{uuid}}', time: '{{nowUtc}}', secret: '{{env:SAF_PLACEHOLDER_POLL}}' } }), url: new URL(`http://127.0.0.1:${address.port}/general`) };
+  const sharedProfile = profileSchema.parse({ ...profile, credentials: { ...profile.credentials, shared: { licenceKeyEnv: 'SAF_PLACEHOLDER_POLL', passwordEnv: 'SAF_PLACEHOLDER_PASSWORD' } } });
+  const request = { ...resolveRequest(configSchema.parse({}), sharedProfile, { method: 'POST', path: '/general', headers: { 'X-Runtime': '{{uuid}}' }, body: { id: '{{uuid}}', time: '{{nowUtc}}', secret: '{{profile:credentials.shared.licenceKey}}', password: '{{profile:credentials.shared.password}}' } }), url: new URL(`http://127.0.0.1:${address.port}/general`) };
   try {
     await poll(async sequenceNumber => {
       const result = await executeRequest(auth, request, undefined, undefined, redactor);
@@ -108,7 +110,7 @@ test('poll resolves each request freshly and protects echoed secrets in diagnost
       assert.ok(!JSON.stringify(redactor.sanitize(result)).includes(process.env.SAF_PLACEHOLDER_POLL!));
     }, { count: 2, intervalMs: 20 });
     assert.equal(received.length, 2);
-    for (const entry of received) { assert.match(entry.id, uuidPattern); assert.equal(entry.header, entry.id); assert.equal(entry.secret, 'dummy-runtime-licence'); }
+    for (const entry of received) { assert.match(entry.id, uuidPattern); assert.equal(entry.header, entry.id); assert.equal(entry.secret, 'dummy-runtime-licence'); assert.equal((entry as unknown as { password: string }).password, 'dummy-independent-shared-password'); }
     assert.notEqual(received[0]!.id, received[1]!.id);
     assert.notEqual(received[0]!.time, received[1]!.time);
     assert.equal((request.body as { id: string }).id, '{{uuid}}');
@@ -123,7 +125,7 @@ test('poll resolves each request freshly and protects echoed secrets in diagnost
     assert.equal(received.length, 4);
     assert.equal(rawBodies[3], staticBody);
     const missing = await executeRequest(auth, request, undefined, undefined, redactor);
-    assert.equal(missing.errorType, 'CONFIG_ERROR'); assert.match(missing.configurationError!, /SAF_PLACEHOLDER_POLL/);
+    assert.equal(missing.errorType, 'CONFIG_ERROR'); assert.match(missing.configurationError!, /credentials.shared.licenceKey/);
     for (const body of ['{{foo}}', '{{uuid']) {
       assert.equal((await executeRequest(auth, { ...request, body }, undefined, undefined, redactor)).errorType, 'CONFIG_ERROR');
     }
@@ -135,10 +137,10 @@ test('poll resolves each request freshly and protects echoed secrets in diagnost
     await logger.close(); await exports?.close();
     for (const file of ['runtime.jsonl', 'runtime.csv', 'runtime.summary.json']) {
       const text = await readFile(join(dir, file), 'utf8');
-      assert.ok(!text.includes('dummy-runtime-licence')); assert.ok(!text.includes('dummy-new-licence'));
+      assert.ok(!text.includes('dummy-independent-shared-password')); assert.ok(!text.includes('dummy-runtime-licence')); assert.ok(!text.includes('dummy-new-licence'));
     }
   } finally {
-    delete process.env.SAF_PLACEHOLDER_POLL;
+    delete process.env.SAF_PLACEHOLDER_POLL; delete process.env.SAF_PLACEHOLDER_PASSWORD;
     await logger.close(); await exports?.close(); server.closeAllConnections();
     await new Promise<void>(resolve => server.close(() => resolve())); await rm(dir, { recursive: true, force: true });
   }

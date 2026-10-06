@@ -22,3 +22,7 @@ Reusable credentials are held under `credentials.oauth2` and `credentials.mtls`.
 # Native Kafka security
 
 Native Kafka uses TechUser X.509 mTLS only. The P12/PFX and password remain in memory; no key extraction or converted certificate files are created. TLS certificate and hostname verification are enabled. Kafka diagnostics use central redaction; Kafka client UUIDs are public transport metadata while credential client IDs remain secret. Arbitrary headers and key contents are omitted. Payload logging requires explicit opt-in and is limited to bounded JSON in local JSONL. Payloads may contain sensitive customer data even after secret redaction. CSV is metadata-only, and summary exports contain Kafka totals. No SAF crypto or business validation is performed. See [Kafka](kafka.md).
+
+## Shared request credentials and profile placeholders
+
+Optional `credentials.shared` stores secret `licenceKey` and `password` values, or the complete `licenceKeyEnv`/`passwordEnv` pair. Partial, empty or mixed pairs are invalid. They are separate from REST OAuth2/mTLS and Kafka mTLS authentication and are never sent automatically. Only explicit `{{profile:credentials.shared.licenceKey}}` and `{{profile:credentials.shared.password}}` references can access profile data. Missing values fail before network access with `CONFIG_ERROR`. Both secrets and encoded forms are centrally redacted, including echoed diagnostics; request payloads are not logged. See [templates](templates.md) for execution timing, polling and generic General API examples.

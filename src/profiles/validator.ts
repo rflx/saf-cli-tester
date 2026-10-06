@@ -1,11 +1,16 @@
 import { readFile } from 'node:fs/promises';
 import { createSecureContext } from 'node:tls';
 import { expandPath } from '../config/paths.js';
-import type { Profile, OAuth2Credential, MtlsCredential } from './types.js';
+import type { Profile, OAuth2Credential, MtlsCredential, SharedCredential } from './types.js';
 
 export function secret(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`CONFIG_ERROR: Missing environment variable ${name}`);
+  return value;
+}
+export function sharedCredential(auth: SharedCredential | undefined, key: 'licenceKey' | 'password'): string {
+  const value = auth?.[key] ?? (auth?.[`${key}Env`] ? process.env[auth[`${key}Env`]!] : undefined);
+  if (!value || !value.trim()) throw new Error(`CONFIG_ERROR: Missing profile credential: credentials.shared.${key}`);
   return value;
 }
 export function oauthCredentials(auth: OAuth2Credential) {
@@ -26,10 +31,11 @@ async function validateMtls(auth: MtlsCredential): Promise<void> {
 }
 
 export async function profileValidation(profile: Profile) {
-  const errors: Partial<Record<'oauth2' | 'mtls', string>> = {};
+  const errors: Partial<Record<'shared' | 'oauth2' | 'mtls', string>> = {};
   // Validate credentials independently and check shared certificate material once.
-  for (const mode of ['oauth2', 'mtls'] as const) {
+  for (const mode of ['shared', 'oauth2', 'mtls'] as const) {
     try {
+      if (mode === 'shared' && profile.credentials.shared) { sharedCredential(profile.credentials.shared, 'licenceKey'); sharedCredential(profile.credentials.shared, 'password'); }
       if (mode === 'oauth2' && profile.credentials.oauth2) oauthCredentials(profile.credentials.oauth2);
       if (mode === 'mtls' && profile.credentials.mtls) await validateMtls(profile.credentials.mtls);
     } catch (error) { errors[mode] = (error as Error).message; }
@@ -42,7 +48,7 @@ export async function profileValidation(profile: Profile) {
   };
   return {
     profile: profile.name, environment: profile.environment,
-    credentials: { oauth2: profile.credentials.oauth2 ? 'configured' : 'not configured', mtls: profile.credentials.mtls ? 'configured' : 'not configured' },
+    credentials: { shared: profile.credentials.shared ? 'configured' : 'not configured', oauth2: profile.credentials.oauth2 ? 'configured' : 'not configured', mtls: profile.credentials.mtls ? 'configured' : 'not configured' },
     rest: transport('rest'), kafka: transport('kafka'),
     validation: Object.keys(errors).length ? 'FAILED' : 'OK', errors
   };

@@ -1,0 +1,16 @@
+name: saf-insurers
+
+request:
+  method: POST
+  path: /general/v3/saf-insurers
+  headers:
+    Content-Type: application/json
+    Accept: application/json
+  body:
+    licenceKey: "{{profile:credentials.shared.licenceKey}}"
+    password: "{{profile:credentials.shared.password}}"
+    requestId: "{{uuid}}"
+    requestTime: "{{nowUtc}}"
+    userAgent:
+      name: saf-cli-tester
+      version: "0.1.0"
