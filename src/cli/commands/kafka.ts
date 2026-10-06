@@ -26,7 +26,9 @@ export function kafkaCommands(program: Command, redactor: Redactor) {
       const consumeOptions = { topic: String(options.topic), count: options.count as number | undefined,
         durationMs: options.duration === undefined ? undefined : durationMs(String(options.duration)), fromBeginning: options.fromBeginning === true };
       if (name === 'consume') {
-        validateGroupId(String(options.groupId)); validateConsume(consumeOptions);
+        const warning = validateGroupId(options.groupId as string | undefined);
+        if (warning) new Logger(redactor).console(warning);
+        validateConsume(consumeOptions);
         if (!Number.isSafeInteger(options.maxPayloadBytes) || Number(options.maxPayloadBytes) < 1 || Number(options.maxPayloadBytes) > 1048576) throw new Error('CONFIG_ERROR: Invalid maximum payload bytes');
       }
       const paths = configPaths(program.opts().configDir as string | undefined);

@@ -13,8 +13,10 @@ export function clientId(value?: string) {
   if (value !== undefined && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) throw new Error('CONFIG_ERROR: Kafka client ID must be a UUID');
   return value ?? randomUUID();
 }
-export function validateGroupId(value: string) {
-  if (!/^CG-(\d{5,6})-IDP(\d{6})$/.test(value)) throw new Error('CONFIG_ERROR: Group ID must match CG-<5 or 6 digits>-IDP<6 digits>');
+export const safGroupIdPattern = /^CG-(\d{5,6})-IDP(\d{6})$/;
+export function validateGroupId(value: string | undefined) {
+  if (value === undefined || value.trim().length === 0) throw new Error('CONFIG_ERROR: Consumer group ID is required and must be non-empty');
+  if (!safGroupIdPattern.test(value)) return `Warning: consumer group ID does not match the documented SAF 1.2.0 pattern\n${safGroupIdPattern.source}\nContinuing with the supplied group ID.`;
 }
 export function kafkaError(error: unknown): string {
   const visited = new Set<unknown>();

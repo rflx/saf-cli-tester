@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { ConsumerRunConfig, EachBatchPayload, EachMessagePayload, Kafka } from 'kafkajs';
+import { Kafka, type ConsumerRunConfig, type EachBatchPayload, type EachMessagePayload } from 'kafkajs';
+import { Command } from 'commander';
+import { kafkaCommands } from '../src/cli/commands/kafka.js';
 import { clientId, connectionTest, consume, createKafka, kafkaCredential, kafkaError, validateConsume, validateGroupId, type ConsumerClient } from '../src/kafka/client.js';
 import { kafkaCsvFields, KafkaStats, messageDiagnostic } from '../src/kafka/diagnostics.js';
 import { profileSchema } from '../src/profiles/types.js';
@@ -44,12 +46,50 @@ test('Kafka profile/credential resolution is mTLS-only and preserves environment
   }
   await assert.rejects(createKafka(profile, clientId(), new Redactor()), /Cannot read/);
 });
-test('SAF group convention, UUID IDs and consume bounds validated locally', () => {
-  for (const value of ['CG-12345-IDP123456', 'CG-123456-IDP123456']) validateGroupId(value);
-  for (const value of ['', 'CG-1234-IDP123456', 'CG-123456-IDP12345', 'some-group']) assert.throws(() => validateGroupId(value), /CONFIG_ERROR/);
+test('SAF group convention is advisory; missing and empty group IDs are rejected', () => {
+  for (const value of ['CG-12345-IDP123456', 'CG-123456-IDP123456']) assert.equal(validateGroupId(value), undefined);
+  for (const value of ['CG-00001-IDP5061788', 'some-group']) assert.equal(validateGroupId(value), 'Warning: consumer group ID does not match the documented SAF 1.2.0 pattern\n^CG-(\\d{5,6})-IDP(\\d{6})$\nContinuing with the supplied group ID.');
+  for (const value of [undefined, '', '   ']) assert.throws(() => validateGroupId(value), /CONFIG_ERROR/);
+});
+test('UUID IDs and consume bounds validated locally', () => {
   assert.notEqual(clientId(), clientId()); assert.equal(clientId(clientId()).length, 36);
   assert.throws(() => clientId('profile-name'), /UUID/);
   for (const options of [{ topic }, { topic, count: 0 }, { topic, count: 1.5 }, { topic: '../topic', count: 1 }, { topic, durationMs: Infinity }]) assert.throws(() => validateConsume(options), /CONFIG_ERROR/);
+});
+test('Kafka consume CLI warns only on SAF deviations and passes group IDs unchanged', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'saf-kafka-groups-'));
+  const originalPrepare = MtlsAuthProvider.prototype.prepareRequest;
+  const originalConsumer = Kafka.prototype.consumer;
+  const originalConsole = console.log;
+  const previousExit = process.exitCode;
+  const output: string[] = [], supplied: string[] = [];
+  MtlsAuthProvider.prototype.prepareRequest = async function () { return { headers: {}, tls: { pfx: Buffer.from('mock-p12'), passphrase: 'mock-password' } }; };
+  Kafka.prototype.consumer = function (options) { supplied.push(options.groupId); return mockConsumer().consumer as ReturnType<Kafka['consumer']>; };
+  console.log = value => { output.push(String(value)); };
+  try {
+    await mkdir(join(root, 'profiles'));
+    await writeFile(join(root, 'profiles/kafka-test.yaml'), JSON.stringify(raw));
+    for (const groupId of ['CG-12345-IDP123456', 'CG-00001-IDP5061788', 'some-group', ' some-group ']) {
+      output.length = 0;
+      const program = new Command().option('--config-dir <path>', '', root);
+      kafkaCommands(program, new Redactor());
+      await program.parseAsync(['kafka', 'consume', '--profile', 'kafka-test', '--topic', topic, '--group-id', groupId, '--count', '1'], { from: 'user' });
+      assert.equal(supplied.at(-1), groupId);
+      const warnings = output.filter(value => value.startsWith('Warning:'));
+      assert.deepEqual(warnings, groupId === 'CG-12345-IDP123456' ? [] : [validateGroupId(groupId)]);
+      assert.equal(process.exitCode, previousExit);
+    }
+    const program = new Command().option('--config-dir <path>', '', root);
+    kafkaCommands(program, new Redactor());
+    await assert.rejects(program.parseAsync(['kafka', 'consume', '--profile', 'kafka-test', '--topic', topic, '--group-id', '', '--count', '1'], { from: 'user' }), /CONFIG_ERROR/);
+    assert.equal(supplied.length, 4);
+  } finally {
+    MtlsAuthProvider.prototype.prepareRequest = originalPrepare;
+    Kafka.prototype.consumer = originalConsumer;
+    console.log = originalConsole;
+    process.exitCode = previousExit;
+    await rm(root, { recursive: true, force: true });
+  }
 });
 test('connection-test uses only admin metadata and always disconnects', async () => {
   const calls: string[] = [];
