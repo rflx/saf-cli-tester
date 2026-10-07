@@ -3,7 +3,7 @@ import type { Profile } from '../profiles/types.js';
 import type { AppConfig } from '../config/types.js';
 import type { RequestOptions } from '../requests/schema.js';
 import type { AuthProvider } from '../auth/types.js';
-import { send } from './client.js';
+import { send, parseHttpVersion } from './client.js';
 import { classifyError, classifyStatus } from '../diagnostics/errors.js';
 import { Redactor } from '../logging/redactor.js';
 import { responseDiagnostics, type ResponseBodyDiagnostic } from '../diagnostics/response.js';
@@ -28,13 +28,15 @@ export function resolveRequest(config: AppConfig, profile: Profile, template: Re
   }
   if (options.body !== undefined && options.bodyFile !== undefined) throw new Error('CONFIG_ERROR: Choose body or body-file');
   if (['GET','HEAD'].includes(options.method) && (options.body !== undefined || options.bodyFile)) throw new Error('CONFIG_ERROR: GET/HEAD cannot have a body');
-  return { ...options, profile, url, timeoutMs: options.timeoutMs ?? 30000 };
+  return { ...options, httpVersion: parseHttpVersion(cli.httpVersion ?? 'auto'), profile, url, timeoutMs: options.timeoutMs ?? 30000 };
 }
 export function enforceProdSafety(profile: Profile, method: string, allowed: boolean) {
   if (profile.environment === 'PROD' && !['GET','HEAD','OPTIONS'].includes(method) && !allowed) throw new Error('CONFIG_ERROR: PROD writes require --allow-prod-write');
 }
 export interface RequestResult {
   statusCode?: number;
+  httpVersion?: string;
+  protocolError?: string;
   durationMs: number;
   requestId?: string | string[];
   correlationId?: string | string[];
@@ -63,7 +65,7 @@ export async function executeRequest(auth: AuthProvider, request: ReturnType<typ
     const body = runtime.body === undefined ? undefined
       : jsonText ? JSON.stringify(runtime.body) === JSON.stringify(parsedBody) ? request.body as string : JSON.stringify(runtime.body)
       : typeof runtime.body === 'string' ? runtime.body : JSON.stringify(runtime.body);
-    const response = await send(request.url, request.method, { ...runtime.headers, ...prepared.headers }, body, request.timeoutMs, prepared.tls, signal, request.diagnosticBodyMaxBytes, consoleResponse !== undefined);
+    const response = await send(request.url, request.method, { ...runtime.headers, ...prepared.headers }, body, request.timeoutMs, prepared.tls, signal, request.diagnosticBodyMaxBytes, consoleResponse !== undefined, request.httpVersion);
     if (consoleResponse) consoleResponse(response.consoleBodyUnavailable ? undefined : response.consoleBody);
     const errorType = classifyStatus(response.status) ?? (expected && !expected.includes(response.status) ? 'UNEXPECTED_STATUS' : undefined);
     let diagnostics = {};
@@ -71,10 +73,10 @@ export async function executeRequest(auth: AuthProvider, request: ReturnType<typ
       try { diagnostics = responseDiagnostics(response, redactor) as object; }
       catch { diagnostics = { responseDiagnosticsFailed: true }; }
     }
-    return { statusCode: response.status, durationMs: response.durationMs, ...correlation(response.headers), ...diagnostics, result: errorType ? 'failure' : 'success', errorType };
+    return { httpVersion: response.httpVersion, statusCode: response.status, durationMs: response.durationMs, ...correlation(response.headers), ...diagnostics, result: errorType ? 'failure' : 'success', errorType };
   } catch (error) {
     const message = error instanceof Error ? error.message : '';
     if (message.startsWith('CONFIG_ERROR')) return { durationMs: performance.now() - started, result: 'failure', errorType: 'CONFIG_ERROR', configurationError: redactor.text(message) };
-    return { durationMs: performance.now() - started, result: 'failure', errorType: message.startsWith('AUTH_ERROR') ? 'AUTH_ERROR' : message.startsWith('CONFIG_ERROR') ? 'CONFIG_ERROR' : classifyError(error), networkErrorCode: (error as NodeJS.ErrnoException).code, ...(error instanceof OAuth2AuthError && error.diagnostics ? { oauth2: error.diagnostics } : {}) };
+    return { durationMs: performance.now() - started, result: 'failure', errorType: message.startsWith('AUTH_ERROR') ? 'AUTH_ERROR' : message.startsWith('CONFIG_ERROR') ? 'CONFIG_ERROR' : classifyError(error), networkErrorCode: (error as NodeJS.ErrnoException).code, ...((error as NodeJS.ErrnoException).code === 'HTTP_PROTOCOL_ERROR' ? { protocolError: redactor.text(message) } : {}), ...(error instanceof OAuth2AuthError && error.diagnostics ? { oauth2: error.diagnostics } : {}) };
   }
 }

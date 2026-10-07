@@ -1173,3 +1173,24 @@ Kafka auth: mtls only
 ```
 
 Shared request credentials are optional API body data, separate from transport authentication. The resolver allows only the two shared profile fields, registers secrets before authentication, and generates UUID/time immediately before each individual HTTP request. No shared credentials are automatically injected into headers or Kafka. See [templates](templates.md) for the runtime boundary and failure behavior.
+
+## REST HTTP transports
+
+```text
+REST request (URL, placeholders, auth, body, diagnostics, redaction)
+   |
+   +-- HTTP/1.1 transport
+   |     node:http / node:https
+   |
+   +-- HTTP/2 transport
+         node:http2
+
+REST auth:     OAuth2 | mTLS
+HTTP protocol: HTTP/1.1 | HTTP/2
+```
+
+Authentication and HTTP protocol are independent dimensions. `executeRequest` prepares authentication and request data once; `send` selects the transport, sharing bounded response collection, console capture, latency and diagnostic handling. OAuth discovery/token acquisition continues to call the default transport. Both HTTPS transports receive the same resolved TLS material, including P12/PFX and passphrase; HTTP/2 also preserves CA, SNI and certificate-validation options.
+
+`auto` keeps the existing HTTP/1.1 path. Forced HTTP/2 accepts HTTPS only, checks `session.alpnProtocol === 'h2'` before creating the request stream, and never falls back. Connection headers and headers named by Connection tokens are excluded; TE is permitted only for trailers. HTTP/2 framing handles body bytes.
+
+Each REST request owns one HTTP/2 session, including each sequential poll iteration. Completion, errors, timeout and abort destroy the stream/session and remove timers and abort listeners. No pooling is introduced. Responses expose the actual HTTP version (`response.httpVersion` on HTTP/1.x, `2` after verified HTTP/2 negotiation). Console and JSONL report it per iteration. CSV columns and aggregate summaries remain unchanged for consumer compatibility.

@@ -1,3 +1,4 @@
+import { parseHttpVersion } from '../../rest/client.js';
 import { payloadOutput } from '../../logging/payload.js';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
@@ -24,6 +25,7 @@ export function requestFlags(command: Command): Command {
     .option('--path <path>', 'Origin-relative path').option('--body <body>', 'Request body').option('--body-file <file>', 'Local body file')
     .option('--header <header>', 'Header: value (repeatable)', (value: string, previous: string[]) => [...previous, value], [])
     .option('--timeout <ms>', 'Request timeout in milliseconds', Number).option('--allow-prod-write', 'Permit writes to PROD')
+    .option('--http-version <version>', 'HTTP protocol: auto, 1.1 or 2', parseHttpVersion)
     .option('--show-response', 'Print the HTTP response body to the terminal (subject to secret redaction)')
     .option('--export <format>', 'Export csv, summary or both', exportFormat).option('--output <path>', 'Export file (single format) or directory (both)');
 }
@@ -39,7 +41,7 @@ export async function runRequest(program: Command, options: Record<string,unknow
     const index = value.indexOf(':'); if (index < 1) throw new Error('CONFIG_ERROR: Header must use Name: value');
     headers[value.slice(0,index).trim().toLowerCase()] = value.slice(index+1).trim();
   }
-  const cli = requestSchema.parse({ method: options.method, path: options.path, body: options.body, bodyFile: options.bodyFile, timeoutMs: options.timeout, headers });
+  const cli = { ...requestSchema.parse({ method: options.method, path: options.path, body: options.body, bodyFile: options.bodyFile, timeoutMs: options.timeout, headers }), httpVersion: options.httpVersion === undefined ? undefined : parseHttpVersion(String(options.httpVersion)) };
   // An explicit CLI body source overrides the template body source.
   const templateRequest = { ...template?.request };
   if (cli.body !== undefined || cli.bodyFile !== undefined) { delete templateRequest.body; delete templateRequest.bodyFile; }
@@ -73,12 +75,14 @@ export async function runRequest(program: Command, options: Record<string,unknow
       let responseReceived = false;
       const timestamp = new Date().toISOString(); const result = await executeRequest(auth, request, controller.signal, template?.expect?.status, redactor, options.showResponse === true ? body => { responseReceived = true; responseBody = body; } : undefined);
       stats.add(result);
+      if (result.protocolError) logger.error(result.protocolError);
       if (result.configurationError) logger.error(result.configurationError);
       // URL query values and request payloads are deliberately omitted from persisted diagnostics.
-      const record = { timestamp, runId, sequenceNumber, profile: profile.name, environment: profile.environment, method: request.method, path: request.url.pathname, ...result };
+      const record = { transport: 'rest', timestamp, runId, sequenceNumber, profile: profile.name, environment: profile.environment, method: request.method, path: request.url.pathname, ...result };
       await logger.record(record);
       await exports?.record(record);
       if (options.showResponse === true) logger.console(`\n[${timestamp}] Request #${sequenceNumber}`);
+      if (result.httpVersion) logger.console(`HTTP version: ${result.httpVersion}`);
       logger.console(`${timestamp} #${sequenceNumber} ${request.method} ${request.url.pathname} ${result.statusCode ?? result.errorType} ${result.durationMs.toFixed(2)} ms ${result.result}`);
       if (responseReceived) logger.console(responseBody === undefined ? 'Response: <unavailable: read failure or 1 MiB console limit>' : payloadOutput('Response', responseBody, redactor));
     };

@@ -517,3 +517,20 @@ npm run dev -- kafka consume --profile <profile-name> \
 ```
 
 Replace placeholders with your own values. EcoHub SAF 1.2.0 documents consumer group pattern `^CG-(\d{5,6})-IDP(\d{6})$`. The CLI requires a non-empty `--group-id` but does not enforce or warn on this naming convention. The supplied ID is sent unchanged to Kafka, which decides whether it is accepted. Client IDs are UUIDs, generated per run unless supplied with `--client-id`. Consume requires `--count` or `--duration`, resumes group offsets, and starts new groups at latest by default. Payload logging is restricted to metadata by default. Kafka produce is not implemented yet. See [Native Kafka](docs/kafka.md) for offsets, local logs, exports and the EcoHub SAF Message Broker System 1.2.0 scope.
+
+## HTTP protocol testing
+
+Use `--http-version auto|1.1|2` with `rest request`, `rest poll`, or `run`:
+
+- `auto` preserves the current default HTTP/1.1 transport behavior.
+- `1.1` forces the existing Node HTTP/1.1 transport.
+- `2` forces HTTPS HTTP/2 and fails if TLS ALPN cannot negotiate `h2`. There is no HTTP/1.1 fallback or cleartext HTTP/2 support.
+
+The actual response version is displayed per request and logged in JSONL as `httpVersion`. OAuth2 and P12 mTLS work with both transports; token acquisition keeps its existing behavior.
+
+```sh
+npm run dev -- rest request --profile <profile-name> --method GET --path /some/path --http-version 2 --show-response
+npm run dev -- run --profile <profile-name> --request templates/general-api/saf-receivers.yaml --http-version 1.1 --show-response
+```
+
+See [REST protocol testing and smoke tests](docs/rest-testing.md).
