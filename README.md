@@ -1,39 +1,19 @@
 # SAF CLI Tester
 
-Repository and local files have distinct purposes:
-
-- `examples/`: reference configuration examples to copy or adapt; normally `*.example.yaml`.
-- `templates/`: versioned, ready-to-run request templates using runtime placeholders, grouped by API/domain.
-- `~/.config/saf-cli-tester/requests/`: local custom requests/templates or one-off definitions, kept outside Git.
-
-Real local configuration belongs under:
-
-```text
-~/.config/saf-cli-tester/
-├── config.yaml
-├── profiles/       # Real local TechUser/profile configuration
-├── certificates/   # Real local P12/PFX/certificate material
-├── requests/       # Local custom requests/templates
-└── logs/           # Runtime JSONL logs
-```
-
-The CLI also reports an optional `secrets/` path; it does not automatically load `.env` files. Repository templates supply requests; the selected local profile supplies endpoints and credentials. Never commit real credentials, certificates, customer payloads or logs.
-
-
-Diagnose EcoHub SAF REST and Native Kafka connectivity using a local TechUser profile for IAT or PROD. Run authenticated requests, consume bounded Kafka records, and collect local diagnostics.
-
-**Keep real credentials, certificates, customer payloads, profiles and diagnostic files outside Git.** Use `~/.config/saf-cli-tester/` for local configuration. Redaction cannot remove every kind of sensitive business data.
+SAF CLI Tester is a local diagnostic CLI for testing EcoHub SAF REST and Native Kafka integrations with TechUser credentials. It supports authenticated requests and polling, reusable YAML templates, HTTP/1.1 and HTTP/2 testing, Kafka connectivity and consumption, and local diagnostic logs and exports.
 
 ## Features
 
-- OAuth2 client credentials and PKCS#12 (`.p12`) mTLS authentication.
-- Single REST requests and sequential polling by count or duration.
-- YAML request templates with optional expected statuses.
-- JSONL diagnostics, request/correlation IDs and latency statistics.
-- Optional CSV and JSON summary exports.
-- Explicit protection against PROD writes.
+- REST OAuth2 client credentials or P12/PFX mTLS authentication.
+- Single REST requests, bounded sequential polling, and HTTP/1.1 or HTTPS HTTP/2.
+- YAML request templates with runtime placeholders and expected-status checks.
+- Optional REST response display with `--show-response`.
+- Native Kafka mTLS connection tests, bounded consumption and consumer group diagnostics.
+- Optional Kafka payload display and bounded JSON logging with `--include-payload`.
+- Redacted JSONL diagnostics, CSV/JSON summary exports and transport statistics.
+- Explicit PROD write protection.
 
-[Architecture](docs/architecture.md) is the authoritative architecture specification. REST diagnostics and Native Kafka connection testing/consuming are implemented; Kafka producing and automatic TechUser enrolment remain roadmap items.
+[Quick Start](#quick-start) · [Configuration](#how-configuration-is-organized) · [CLI reference](#cli-command-reference) · [REST](#rest) · [Native Kafka](#native-kafka) · [Security](#security) · [Documentation](#documentation)
 
 ## Quick Start
 
@@ -43,26 +23,52 @@ Requires **Node.js >=20.15.1** and npm. From the repository root:
 npm ci
 npm run build
 npm run dev -- --help
+
 mkdir -p ~/.config/saf-cli-tester/profiles
-cp examples/profile.oauth2.example.yaml ~/.config/saf-cli-tester/profiles/example-oauth2.yaml
-chmod 600 ~/.config/saf-cli-tester/profiles/example-oauth2.yaml
+cp examples/profile.full.example.yaml \
+  ~/.config/saf-cli-tester/profiles/example-profile.yaml
+chmod 600 ~/.config/saf-cli-tester/profiles/example-profile.yaml
 ```
 
-Edit the copied profile outside the repository. Choose `IAT` or `PROD` for `environment` and replace placeholder URLs with approved endpoints for that environment. Replace the direct credential placeholders, or replace both fields with `clientIdEnv: SAF_CLIENT_ID` and `clientSecretEnv: SAF_CLIENT_SECRET` and export those variables through your shell or secret manager. **`.env` files are not automatically loaded.**
+Edit the copied file **outside Git**. Keep `name: example-profile` aligned with its filename, choose the TechUser's `IAT` or `PROD` environment, and replace placeholder endpoints and credentials. Configure REST, Kafka, or both; remove unused transports and credential blocks. The full example includes shared credentials and a certificate reference, so remove those if unused or supply their real local values before validation. Neither environment nor transport is required as a preferred choice.
 
 ```sh
-npm run dev -- profiles validate example-oauth2
-npm run dev -- profiles show example-oauth2
-npm run dev -- rest request --profile example-oauth2 --path /example
+npm run dev -- profiles validate example-profile
+npm run dev -- profiles show example-profile
 ```
 
-Replace `/example` with an actual SAF resource path. All URLs and resource paths in this README are placeholders. Validation is local; the final command contacts the configured service. Each run prints its environment, run ID, log location, results and final statistics.
+Validation is local: it checks configured credentials, environment variables and certificate usability without authenticating or contacting services. `show` prints a sanitized profile.
 
-Examples use `npm run dev --`, which builds before execution. After a build, you can also use `node dist/cli/index.js`, or run `npm link` and use `saf-cli-tester`.
+Choose a first network check for the transport you configured:
 
-## Configuration
+```sh
+# REST: replace /some/path with an actual resource path.
+npm run dev -- rest request --profile example-profile --method GET --path /some/path
 
-The default root is `~/.config/saf-cli-tester/`. Inspect paths and effective application settings with:
+# Native Kafka: test authenticated broker metadata access.
+npm run dev -- kafka connection-test --profile example-profile
+```
+
+All angle-bracket values and generic resource paths below are placeholders; replace them before running commands. Examples use `npm run dev --`, which builds before execution. After building, `node dist/cli/index.js` accepts the same arguments; `npm link` also makes `saf-cli-tester` available.
+
+## How configuration is organized
+
+| Location | Purpose |
+| --- | --- |
+| Repository `examples/` | Configuration and request-schema references to copy or adapt; no real secrets. |
+| Repository `templates/` | Versioned, ready-to-run request templates; the local profile supplies endpoints and credentials. |
+| Local `~/.config/saf-cli-tester/` | Real profiles, certificates, custom requests and diagnostic files, outside Git. |
+
+```text
+~/.config/saf-cli-tester/
+├── config.yaml     # Optional application settings
+├── profiles/       # Real TechUser configuration
+├── certificates/   # P12/PFX certificates
+├── requests/       # Local custom request templates
+└── logs/           # Run diagnostics and default exports
+```
+
+`config paths` also reports an optional `secrets/` path. **The CLI does not automatically load `.env` files.** Export environment-backed credentials through your shell or secret manager.
 
 ```sh
 npm run dev -- config paths
@@ -70,413 +76,435 @@ npm run dev -- config show
 npm run dev -- --config-dir ~/saf-local config paths
 ```
 
-Profiles belong in `profiles/`, certificates in `certificates/`, and diagnostics in `logs/` beneath that root. Reading configuration does not create directories. An optional `config.yaml` supports:
+Missing `config.yaml` uses defaults: REST timeout 30000 ms, error-body diagnostic limit 65536 bytes and polling interval 60 seconds. Invalid existing configuration fails; unknown fields are rejected. Reading configuration does not create directories.
 
-```yaml
-rest:
-  timeoutMs: 30000
-  diagnosticBodyMaxBytes: 65536
-  headers:
-    Accept: application/json
-poll:
-  intervalSeconds: 60
+Request settings resolve in this order: CLI, template, profile, application settings/defaults. Headers merge case-insensitively. HTTP protocol selection is a CLI option, not a profile or template setting. See [configuration](docs/configuration.md) for the full schema and precedence rules.
+
+## Profiles and credentials
+
+Each profile belongs to one TechUser and one explicit environment (`IAT` or `PROD`); commands cannot override its environment. Save `<profile-name>.yaml` under local `profiles/`, with a matching YAML `name`. Names start with a letter or number and contain only letters, numbers, `_` or `-`.
+
+| Profile block | Purpose |
+| --- | --- |
+| `credentials.shared` | Optional reusable request-level `licenceKey` and `password`; inserted only by explicit placeholders. |
+| `credentials.oauth2` | REST OAuth2 authentication. |
+| `credentials.mtls` | P12/PFX authentication reusable by REST and Native Kafka. |
+| `rest` | HTTPS base URL, authentication reference, optional timeout and headers. |
+| `kafka` | Brokers and mTLS authentication reference. |
+
+A profile needs credentials and at least one transport. REST selects OAuth2 or mTLS through `rest.auth`; Native Kafka uses mTLS only through `kafka.auth`. Shared credentials are API data, separate from transport authentication, and are never sent automatically.
+
+Use [the canonical full profile](examples/profile.full.example.yaml) as the reference. OAuth2 accepts a complete direct `clientId`/`clientSecret` pair or a complete `clientIdEnv`/`clientSecretEnv` pair. Shared credentials similarly accept direct `licenceKey`/`password` or environment references `licenceKeyEnv`/`passwordEnv`. Partial or mixed pairs are rejected. mTLS accepts exactly one of `p12Password` (which may be empty) or `p12PasswordEnv`.
+
+Verify trusted OAuth discovery/token endpoints before supplying credentials; discovery may select another HTTPS origin. An explicit `tokenEndpoint` takes precedence over discovery. Prefer absolute or `~/` certificate paths; relative certificate paths resolve from the working directory.
+
+`profiles validate` checks **all configured credentials**, including those unused by a selected transport. Local validation does not prove server acceptance. Legacy top-level `auth` remains accepted for REST and is normalized, but cannot be combined with the new credential/auth structure. See [profiles and migration](docs/profiles.md) for authentication fields, scope, token behavior and validation details.
+
+## CLI command reference
+
+| Command | Purpose |
+| --- | --- |
+| `config paths` | Show local filesystem paths. |
+| `config show` | Show effective application configuration. |
+| `profiles list` | List local profiles and transport authentication modes. |
+| `profiles show <name>` | Show a sanitized profile. |
+| `profiles validate <name>` | Validate configuration and credentials locally. |
+| `rest request` | Execute one REST request. |
+| `rest poll` | Execute bounded sequential REST polling. |
+| `run` | Execute a YAML request template, including its polling configuration. |
+| `kafka connection-test` | Test authenticated Native Kafka metadata connectivity. |
+| `kafka consume` | Consume bounded Kafka messages. |
+| `kafka group-describe` | Inspect an existing consumer group. |
+| `help [command]` | Display help; command groups also expose this helper. |
+
+The command groups are `config`, `profiles`, `rest` and `kafka`. Every command accepts `-h, --help`. Tables below list every command option; defaults described as “resolved settings” come from configuration precedence, rather than a Commander flag default. `—` means no default value.
+
+### Global options
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--config-dir <directory>` | `~/.config/saf-cli-tester` | Local configuration root for all commands. |
+| `-V, --version` | — | Print the CLI version. |
+| `-h, --help` | — | Display help. |
+
+Place global configuration options before the subcommand.
+
+### config
+
+`config`, `config paths` and `config show` have no command-specific options beyond `-h, --help`.
+
+```sh
+npm run dev -- config paths
+npm run dev -- config show
 ```
 
-Missing application configuration uses defaults; invalid existing configuration fails. Unknown fields are rejected. Request settings take precedence in this order: CLI, template, profile, application settings/defaults. Headers merge case-insensitively. Environment always comes from the profile. See [configuration details](docs/configuration.md).
+### profiles
 
-## Profiles
-
-A profile represents one TechUser and is permanently bound to exactly one environment: `IAT` for integration acceptance testing or `PROD` for production. The environment cannot be overridden from the CLI. Create separate profiles for separate TechUsers and environments as needed. Neither environment is the default or required choice; select the one appropriate to your TechUser. PROD has the write guard described below.
-
-Save profiles as `<profile-name>.yaml` in the local `profiles/` directory. The filename must match the YAML `name`. Names start with a letter or number and contain only letters, numbers, `_` or `-`.
-
-Every profile requires `name`, `environment`, reusable `credentials` and at least one transport (`rest`, `kafka`, or both). A profile can hold both OAuth2 and mTLS credentials. REST supports either; native Kafka supports mTLS only. The same `credentials.mtls` can be reused by both transports. REST commands (`rest request`, `rest poll`, `run`) select credentials automatically from `rest.auth`; users normally do not specify an auth mode in commands. Kafka commands use `kafka.auth`.
-
-Profile `rest` requires `baseUrl` and `auth`, and accepts optional `timeoutMs` and `headers`. URLs require HTTPS without embedded credentials or fragments.
-
-Example profile with both transports:
-
-```yaml
-name: example-profile
-environment: IAT # or PROD
-
-credentials:
-  oauth2:
-    clientId: "<client-id>"
-    clientSecret: "<client-secret>"
-    openIdConfigurationUrl: https://<openid-configuration-url>
-    tokenAuthMethod: client_secret_basic
-    scope: https://graph.microsoft.com/.default
-  mtls:
-    p12Path: ~/.config/saf-cli-tester/certificates/example.p12
-    p12Password: "<p12-password>"
-
-rest:
-  baseUrl: https://<saf-base-url>
-  timeoutMs: 30000
-  auth:
-    mode: oauth2
-    credential: oauth2
-
-kafka:
-  brokers:
-    - <kafka-broker>:9092
-  auth:
-    mode: mtls
-    credential: mtls
-```
-
-REST using OAuth2:
-
-```yaml
-rest:
-  auth:
-    mode: oauth2
-    credential: oauth2
-```
-
-REST using mTLS:
-
-```yaml
-rest:
-  auth:
-    mode: mtls
-    credential: mtls
-```
-
-These snippets select credentials within a complete profile; include `rest.baseUrl` when configuring REST.
+`profiles`, `profiles list`, `profiles show <name>` and `profiles validate <name>` have no command-specific options beyond `-h, --help`. `show` and `validate` require the positional profile name.
 
 ```sh
 npm run dev -- profiles list
-npm run dev -- profiles show example-profile
-npm run dev -- profiles validate example-profile
+npm run dev -- profiles show <profile-name>
+npm run dev -- profiles validate <profile-name>
 ```
 
-`list` shows names, environments and authentication modes per transport. `show` prints sanitized configuration, including `[REDACTED]` for a direct client secret. `validate` reports configured credentials and each transport independently, checking the schema and credential availability; for mTLS it also checks certificate readability and whether Node can use the certificate/password combination. **Validation performs no authentication or network request.** See [profiles](docs/profiles.md).
+### rest request
 
+| Flag | Default / requirement | Description |
+| --- | --- | --- |
+| `--profile <name>` | Required | Local TechUser profile. |
+| `--method <method>` | GET | GET, HEAD, OPTIONS, POST, PUT, PATCH or DELETE. |
+| `--path <path>` | — | Origin-relative path starting with a single `/`; required after resolving settings. |
+| `--body <body>` | — | Inline request body; mutually exclusive with `--body-file`. |
+| `--body-file <file>` | — | Read a local request body file. |
+| `--header <header>` | [] | Repeatable `Name: value` header. |
+| `--timeout <ms>` | Resolved settings | Positive integer timeout in milliseconds; application default is 30000. |
+| `--allow-prod-write` | Off | Explicitly permit mutating REST requests in PROD. |
+| `--http-version <version>` | auto | API transport: `auto`, `1.1` or `2`. |
+| `--show-response` | Off | Print the redacted HTTP response body to the terminal. |
+| `--export <format>` | Disabled | `csv`, `summary` or `both`. |
+| `--output <path>` | Local logs directory | Exact file for a single export format; directory for `both`. Requires `--export`. |
+| `-h, --help` | — | Display command help. |
 
-## Shared TechUser credentials
+### rest poll
 
-Profiles may optionally store profile-wide shared request credentials. These are API data fields, separate from transport authentication (REST: OAuth2 or mTLS; Kafka: mTLS only). They are never automatically sent to REST or Kafka. Templates insert them only through explicit placeholders. Both values are secrets and are always redacted.
+| Flag | Default / requirement | Description |
+| --- | --- | --- |
+| `--profile <name>` | Required | Local TechUser profile. |
+| `--method <method>` | GET | GET, HEAD, OPTIONS, POST, PUT, PATCH or DELETE. |
+| `--path <path>` | — | Origin-relative path starting with a single `/`; required after resolving settings. |
+| `--body <body>` | — | Inline request body; mutually exclusive with `--body-file`. |
+| `--body-file <file>` | — | Read a local request body file. |
+| `--header <header>` | [] | Repeatable `Name: value` header. |
+| `--timeout <ms>` | Resolved settings | Positive integer timeout in milliseconds; application default is 30000. |
+| `--allow-prod-write` | Off | Explicitly permit mutating REST requests in PROD. |
+| `--http-version <version>` | auto | API transport: `auto`, `1.1` or `2`. |
+| `--show-response` | Off | Print the redacted HTTP response body to the terminal. |
+| `--export <format>` | Disabled | `csv`, `summary` or `both`. |
+| `--output <path>` | Local logs directory | Exact file for a single export format; directory for `both`. Requires `--export`. |
+| `--interval <seconds>` | Resolved settings | Positive start interval; application default is 60. Mutating polls require an explicit interval. |
+| `--count <n>` | — | Positive integer request bound. |
+| `--duration <duration>` | — | Positive duration with `ms`, `s`, `m` or `h`, e.g. `30m`. |
+| `-h, --help` | — | Display command help. |
 
-```yaml
-credentials:
-  shared:
-    licenceKey: "<licence-key>"
-    password: "<techuser-password>"
-```
+### run
 
-Alternatively, use exactly one complete environment-backed pair:
+CLI values override supported template settings. A template with `poll` runs polling; otherwise `run` executes one request, even if polling flags are supplied.
 
-```yaml
-credentials:
-  shared:
-    licenceKeyEnv: SAF_LICENCE_KEY
-    passwordEnv: SAF_TECHUSER_PASSWORD
-```
+| Flag | Default / requirement | Description |
+| --- | --- | --- |
+| `--profile <name>` | Required | Local TechUser profile. |
+| `--method <method>` | GET | GET, HEAD, OPTIONS, POST, PUT, PATCH or DELETE. |
+| `--path <path>` | — | Origin-relative path starting with a single `/`; required after resolving settings. |
+| `--body <body>` | — | Inline request body; mutually exclusive with `--body-file`. |
+| `--body-file <file>` | — | Read a local request body file. |
+| `--header <header>` | [] | Repeatable `Name: value` header. |
+| `--timeout <ms>` | Resolved settings | Positive integer timeout in milliseconds; application default is 30000. |
+| `--allow-prod-write` | Off | Explicitly permit mutating REST requests in PROD. |
+| `--http-version <version>` | auto | API transport: `auto`, `1.1` or `2`. |
+| `--show-response` | Off | Print the redacted HTTP response body to the terminal. |
+| `--export <format>` | Disabled | `csv`, `summary` or `both`. |
+| `--output <path>` | Local logs directory | Exact file for a single export format; directory for `both`. Requires `--export`. |
+| `--interval <seconds>` | Resolved settings | Positive start interval; application default is 60. Mutating polls require an explicit interval. |
+| `--count <n>` | — | Positive integer request bound. |
+| `--duration <duration>` | — | Positive duration with `ms`, `s`, `m` or `h`, e.g. `30m`. |
+| `--request <file>` | Required | YAML request template path. |
+| `-h, --help` | — | Display command help. |
 
-Both values must be nonempty. Mixed direct/environment fields and partial pairs are rejected; there is no precedence rule. `profiles validate` checks environment availability locally. Missing shared credentials do not invalidate ordinary REST or Kafka profiles.
+### kafka connection-test
 
-## Template placeholders
+| Flag | Default / requirement | Description |
+| --- | --- | --- |
+| `--profile <name>` | Required | Local TechUser profile with Kafka mTLS configured. |
+| `--client-id <uuid>` | Generated UUID | Explicit Kafka UUID client ID. |
+| `--export <format>` | Disabled | `csv`, `summary` or `both`. |
+| `--output <path>` | Local logs directory | Exact file for a single format; directory for `both`. Requires `--export`. |
+| `-h, --help` | — | Display command help. |
 
-Supported values are `{{uuid}}`, `{{nowUtc}}`, `{{env:VARIABLE_NAME}}`, `{{profile:credentials.shared.licenceKey}}` and `{{profile:credentials.shared.password}}`. UUID and UTC timestamp are regenerated immediately before each request, including every polling iteration. Repeated references within one request share the same UUID/time.
+### kafka consume
 
-Profile access is intentionally allowlisted to those two shared fields. Other profile references, unknown placeholders and malformed placeholders fail with `CONFIG_ERROR` before authentication or network access. A missing shared value identifies its configuration path without exposing secrets. Resolution is recursive in body objects, arrays, strings and permitted header values. No expressions or arbitrary property traversal are supported. See [template details](docs/templates.md).
+| Flag | Default / requirement | Description |
+| --- | --- | --- |
+| `--profile <name>` | Required | Local TechUser profile with Kafka mTLS configured. |
+| `--client-id <uuid>` | Generated UUID | Explicit Kafka UUID client ID. |
+| `--export <format>` | Disabled | `csv`, `summary` or `both`. |
+| `--output <path>` | Local logs directory | Exact file for a single format; directory for `both`. Requires `--export`. |
+| `--topic <topic>` | Required | Kafka topic to consume (normally a SAF OUT topic). |
+| `--group-id <id>` | Required | Non-empty consumer group ID, sent unchanged. |
+| `--count <n>` | — | Maximum records; positive safe integer. |
+| `--duration <duration>` | — | Maximum duration with `ms`, `s`, `m` or `h`; at most 24.8 days. |
+| `--from-beginning` | Off | Use earliest available offsets for a new/uncommitted group. |
+| `--include-payload` | Off | Print redacted message values and log bounded JSON locally. |
+| `--max-payload-bytes <n>` | 65536 | Persistent payload diagnostic limit, 1–1048576 bytes; does not limit console output. |
+| `-h, --help` | — | Display command help. |
 
-## General API templates
+### kafka group-describe
 
-The generic templates work with any compatible TechUser profile using REST OAuth2 or mTLS:
+| Flag | Default / requirement | Description |
+| --- | --- | --- |
+| `--profile <name>` | Required | Local TechUser profile with Kafka mTLS configured. |
+| `--client-id <uuid>` | Generated UUID | Explicit Kafka UUID client ID. |
+| `--export <format>` | Disabled | `csv`, `summary` or `both`. |
+| `--output <path>` | Local logs directory | Exact file for a single format; directory for `both`. Requires `--export`. |
+| `--group-id <id>` | Required | Non-empty ID of an existing consumer group. |
+| `-h, --help` | — | Display command help. |
+
+## REST
+
+### Single requests
+
+The default method is GET. Paths resolve from the profile's HTTPS origin, not beneath a base URL path, and must remain on that origin. Redirects are not followed.
 
 ```sh
-npm run dev -- run \
-  --profile <profile-name> \
-  --request templates/general-api/saf-receivers.yaml \
-  --show-response
-
-npm run dev -- run \
-  --profile <profile-name> \
-  --request templates/general-api/saf-insurers.yaml \
-  --show-response
-```
-
-The profile supplies environment, REST base URL, transport authentication and shared credentials. The template supplies method, API path, body schema, generated request ID/time and user agent. No `onBehalfOf` is added. PROD writes require `--allow-prod-write`; mutating polls require an explicit interval.
-
-## OAuth2
-
-Example external profile, `~/.config/saf-cli-tester/profiles/example-profile.yaml`:
-
-```yaml
-name: example-profile
-environment: IAT # or PROD; choose the environment for this TechUser
-credentials:
-  oauth2:
-    openIdConfigurationUrl: https://<openid-configuration-url>
-    clientIdEnv: SAF_EXAMPLE_CLIENT_ID
-    clientSecretEnv: SAF_EXAMPLE_CLIENT_SECRET
-    scope: https://graph.microsoft.com/.default
-    tokenAuthMethod: client_secret_basic
-rest:
-  baseUrl: https://<saf-base-url>
-  timeoutMs: 30000
-  auth:
-    mode: oauth2
-    credential: oauth2
-```
-
-Use `openIdConfigurationUrl` for discovery or `tokenEndpoint` for an explicit token URL. If both are supplied, `tokenEndpoint` wins. Verify trusted endpoints before supplying credentials: discovery can return a token endpoint on another HTTPS origin.
-
-Credentials must be exactly one complete pair:
-
-- `clientIdEnv` + `clientSecretEnv`: names of exported environment variables.
-- `clientId` + `clientSecret`: nonempty direct values in the external local profile.
-
-Mixed pairs are rejected. Keep direct secrets outside Git and restrict the profile to mode `0600`. Never put real secrets in command arguments or tracked examples.
-
-`tokenAuthMethod` defaults to `client_secret_basic`; `client_secret_post` sends credentials in the form body. Optional `scope` must be nonempty when set; for EcoHub SAF, use `https://graph.microsoft.com/.default`. Tokens must be Bearer tokens with a positive numeric `expires_in`. They are cached only in memory and renewed before expiry.
-
-## mTLS
-
-Example external profile, `~/.config/saf-cli-tester/profiles/techuser-profile.yaml`:
-
-```yaml
-name: techuser-profile
-environment: IAT # or PROD; choose the environment for this TechUser
-credentials:
-  mtls:
-    p12Path: ~/.config/saf-cli-tester/certificates/techuser-profile.p12
-    p12PasswordEnv: SAF_EXAMPLE_P12_PASSWORD
-rest:
-  baseUrl: https://<saf-base-url>
-  auth:
-    mode: mtls
-    credential: mtls
-```
-
-Start with [the mTLS example](examples/profile.mtls.example.yaml). Store the real P12 outside the repository and export the password variable through your shell or secret manager. Prefer absolute or `~/` certificate paths; relative paths resolve from the working directory.
-
-```sh
-npm run dev -- profiles validate techuser-profile
-```
-
-Use exactly one of direct `p12Password` (an empty password is allowed) or `p12PasswordEnv`; mixing is rejected.
-
-Certificate material is loaded only during validation or a request and is never logged. Server certificate verification remains enabled.
-
-### Migration from legacy profiles
-
-Top-level `auth` is deprecated but remains accepted for existing REST profiles. It is normalized internally and `profiles show` displays the new structure. Move all credential fields under `credentials.<mode>` and replace top-level `auth` with `rest.auth`. Combining legacy `auth` with `credentials` or `rest.auth` is rejected with a migration error.
-
-Old:
-
-```yaml
-rest:
-  baseUrl: https://example.invalid
-auth:
-  mode: oauth2
-  clientIdEnv: SAF_CLIENT_ID
-  clientSecretEnv: SAF_CLIENT_SECRET
-  tokenEndpoint: https://example.invalid/token
-```
-
-New (keep `name` and `environment` unchanged):
-
-```yaml
-credentials:
-  oauth2:
-    clientIdEnv: SAF_CLIENT_ID
-    clientSecretEnv: SAF_CLIENT_SECRET
-    tokenEndpoint: https://example.invalid/token
-rest:
-  baseUrl: https://example.invalid
-  auth:
-    mode: oauth2
-    credential: oauth2
-```
-
-For legacy mTLS, move `p12Path` and `p12PasswordEnv` into `credentials.mtls` and set `rest.auth` to `mode: mtls`, `credential: mtls`.
-
-## Viewing payloads
-
-Payload output is disabled by default and always subject to central secret redaction.
-REST `--show-response` shows the HTTP response body in the terminal only.
-Native Kafka `--include-payload` shows consumed message payloads; it also retains the existing bounded JSON payload logging contract. CSV and summary exports remain metadata-only.
-
-```sh
+# Simple GET
 npm run dev -- rest request \
-  --profile <profile-name> \
-  --method GET \
-  --path /some/path \
-  --show-response
+  --profile <profile-name> --method GET --path /some/path
 
+# Show response
+npm run dev -- rest request \
+  --profile <profile-name> --method GET --path /some/path --show-response
+
+# HTTPS HTTP/2
+npm run dev -- rest request \
+  --profile <profile-name> --method GET --path /some/path \
+  --http-version 2 --show-response
+
+# POST with non-sensitive example JSON
+npm run dev -- rest request \
+  --profile <profile-name> --method POST --path /some/path \
+  --header 'Content-Type: application/json' --body '{"example":"value"}'
+```
+
+Choose `--body` or `--body-file`, never both; GET/HEAD cannot have a body. Use external body files for sensitive data. `--header` is repeatable; Authorization, Proxy-Authorization, Cookie, Host, Content-Length, Transfer-Encoding and Connection are reserved. Authentication headers are managed by the tool.
+
+The positive integer `--timeout` applies to each HTTP exchange, including discovery/token exchanges individually. Only 2xx responses succeed. Template `expect.status` can narrow accepted 2xx statuses; listing non-2xx statuses does not make them successful.
+
+### Polling
+
+Choose one effective bound: `--count` or `--duration`. If both CLI flags are supplied, duration takes precedence; use only one to make intent clear. Durations accept positive values with `ms`, `s`, `m` or `h`, including fractional values.
+
+```sh
+# Count
+npm run dev -- rest poll \
+  --profile <profile-name> --path /some/path --interval 60 --count 10
+
+# Duration
+npm run dev -- rest poll \
+  --profile <profile-name> --path /some/path --interval 60 --duration 30m
+
+# Compare protocols with the same polling settings
+npm run dev -- rest poll \
+  --profile <profile-name> --path /some/path --interval 60 --count 5 --http-version 1.1
+npm run dev -- rest poll \
+  --profile <profile-name> --path /some/path --interval 60 --count 5 --http-version 2
+```
+
+`--interval` controls seconds between request starts. Execution is sequential with no overlap or catch-up bursts; slow requests extend the interval. GET/HEAD/OPTIONS use the configured interval when omitted. POST/PUT/PATCH/DELETE polling requires an explicit interval (from CLI or template), plus PROD authorization when applicable. Ctrl+C or SIGTERM aborts active work and prints final statistics.
+
+### Request templates
+
+`run` executes a YAML request template. A `poll` block enables polling; omit it for a single request. CLI settings override supported template values, an explicit CLI body source replaces the template body source, and CLI count/duration replaces the template bound.
+
+```sh
 npm run dev -- run \
-  --profile <profile-name> \
-  --request templates/general-api/saf-receivers.yaml \
-  --show-response
-
-npm run dev -- kafka consume \
-  --profile <profile-name> \
-  --topic <topic> \
-  --group-id <group-id> \
-  --duration 1m \
-  --include-payload
+  --profile <profile-name> --request templates/general-api/saf-receivers.yaml --show-response
+npm run dev -- run \
+  --profile <profile-name> --request templates/general-api/saf-receivers.yaml \
+  --http-version 2 --show-response
 ```
 
-See [REST output](docs/rest-testing.md) and [Kafka output](docs/kafka.md) for formatting, limits and logging behavior. Replace placeholders with your own values.
+These General API templates use POST: PROD profiles require `--allow-prod-write`. Relative template `bodyFile` paths resolve beside the template; CLI body-file paths resolve from the working directory. See [request schema and overrides](docs/requests.md) and [runtime placeholders](docs/templates.md).
 
-## REST Requests
+### Viewing responses
 
-The method defaults to `GET`. Supported methods are `GET`, `HEAD`, `OPTIONS`, `POST`, `PUT`, `PATCH` and `DELETE`.
+Without `--show-response`, REST prints compact metadata and summary statistics. With it, the HTTP response body appears in the terminal: JSON is pretty-printed, plain text is supported, and empty/unavailable bodies are identified. Central secret redaction applies.
 
-```sh
-npm run dev -- rest request --profile example-profile --path /example
-npm run dev -- rest request --profile example-profile --method POST --path /example --body '{"foo":"bar"}' --header 'Content-Type: application/json'
-npm run dev -- rest request --profile example-profile --method POST --path /example --body-file ~/saf-test-data/request.json --header 'Content-Type: application/json'
-npm run dev -- rest request --profile example-profile --path /example --header 'Accept: application/json' --header 'X-Something: value' --timeout 30000
-```
+This flag controls **console output only**; it does not add successful bodies to JSONL or exports. Bounded 4xx/5xx diagnostics are recorded independently. Console response capture is limited to 1 MiB. See [REST output details](docs/rest-testing.md).
 
-Paths must start with a single `/` and stay on the profile's origin. They resolve from the origin, not beneath a base URL path. Redirects are not followed. Choose `--body` or `--body-file`, never both; GET/HEAD cannot have a body. Keep sensitive payloads in external body files. If the profile belongs to PROD, these mutating requests also require `--allow-prod-write`; see [PROD Safety](#prod-safety).
+### HTTP/1.1 and HTTP/2
 
-`--header` is repeatable. Reserved headers (`Authorization`, `Proxy-Authorization`, `Cookie`, `Host`, `Content-Length`, `Transfer-Encoding`, `Connection`) cannot be supplied. Authentication headers are managed by the tool.
+| Value | Behavior |
+| --- | --- |
+| `--http-version auto` | Default; preserves the existing HTTP/1.1 transport behavior. |
+| `--http-version 1.1` | Selects the HTTP/1.1 transport explicitly. |
+| `--http-version 2` | Forces HTTPS HTTP/2; TLS ALPN must negotiate `h2`. No silent HTTP/1.1 fallback or cleartext HTTP/2. |
 
-`--timeout` is a positive integer in milliseconds. It applies to each HTTP exchange, including discovery and token exchanges individually. Any non-2xx response is a failed request.
+The actual response HTTP version is displayed and logged as `httpVersion` when a response is received. Both OAuth2 and mTLS work with either transport; the option applies to the API request, while OAuth discovery/token acquisition retains its default transport. Protocol selection is supported by `rest request`, `rest poll` and `run`. See [REST transport details and troubleshooting](docs/rest-testing.md).
 
-## Polling
+### Exports
 
-Choose exactly one bound: a positive integer `--count` or a positive `--duration` with units `ms`, `s`, `m` or `h`. Fractional durations are supported.
-
-```sh
-npm run dev -- rest poll --profile example-profile --path /example --interval 60 --count 120
-npm run dev -- rest poll --profile example-profile --path /example --interval 60 --duration 2h --timeout 30000
-```
-
-`--interval` is in seconds and controls the interval between request starts. GET/HEAD/OPTIONS use the configured default (60 seconds unless changed) when it is omitted. POST/PUT/PATCH/DELETE polling requires an explicit interval.
-
-Requests run sequentially, with no overlap or catch-up bursts. Slow requests can extend the actual interval. Ctrl+C or SIGTERM aborts active work and prints final statistics.
-
-## Request Templates
-
-Templates complement ad-hoc requests. Save this example as `~/.config/saf-cli-tester/requests/minute-poll.yaml`; keep real payloads outside Git:
-
-```yaml
-name: minute-poll-test
-request:
-  method: GET
-  path: /example
-poll:
-  intervalSeconds: 60
-  count: 120
-expect:
-  status: [200]
-```
-
-```sh
-npm run dev -- run --profile example-profile --request ~/.config/saf-cli-tester/requests/minute-poll.yaml
-npm run dev -- run --profile example-profile --request ~/.config/saf-cli-tester/requests/minute-poll.yaml --count 5 --interval 10
-```
-
-Omit `poll` for a single request. `request` accepts `method`, `path`, `headers`, `body` or `bodyFile`, and `timeoutMs`. `poll` accepts `intervalSeconds` and exactly one of `count` or `duration`. Optional `expect.status` narrows accepted 2xx statuses; other 2xx responses become `UNEXPECTED_STATUS`. Non-2xx responses remain failures even if listed.
-
-Body strings, nested objects, arrays and permitted header values support `{{uuid}}`, `{{nowUtc}}` and `{{env:VARIABLE_NAME}}`. Each request, including every poll iteration, receives a new UUID and a current UTC timestamp immediately before HTTP execution. Missing/empty variables, unknown placeholders and malformed placeholders fail with `CONFIG_ERROR`. Environment values pass through central secret redaction; request bodies remain excluded from logs and exports. No code or shell expressions are evaluated.
-
-See [runtime template details](docs/requests.md), the [request schema reference](examples/request.example.yaml), and the [General API templates](docs/templates.md).
-
-`run` accepts the REST request and polling flags. CLI settings override templates; an explicit CLI body source replaces the template body source, and CLI count or duration replaces the template bound. Relative template `bodyFile` paths resolve beside the template; CLI body-file paths resolve from the working directory. `~/` paths are supported.
-
-## Diagnostics
-
-Every run writes `<config-dir>/logs/<runId>.jsonl`. Request records include timestamps, sequence number, profile/environment, method/path, status when available, duration, request/correlation IDs when available, and classified failures. The final summary reports request and success counts, 4xx/5xx/500/timeout counts, success and 5xx rates, and min/average/p50/p95/max latency. Percentiles use nearest rank.
-
-HTTP **4xx/5xx** records also capture sanitized JSON/text response diagnostics and allowlisted response identifiers. Request bodies, query values and arbitrary headers are omitted; successful response bodies are not logged. The console prints response bodies only with `--show-response`.
-
-Error-body capture defaults to **64 KiB**. Set `rest.diagnosticBodyMaxBytes` in local `config.yaml` to an integer from 0 to 1048576 bytes. Truncated bodies are marked and their content omitted to avoid partial-secret leaks. Empty and binary bodies contain metadata only. Diagnostic read/processing failures preserve the original HTTP classification.
-
-OAuth2 `AUTH_ERROR` records can include `oauth2.stage`, HTTP status and sanitized `error`/`error_description` strings. Each string is limited to 1024 characters with control characters removed; other authentication response fields and non-JSON bodies are omitted.
-
-**Logs can contain sensitive business data despite redaction. Protect them and never commit them.** See [diagnostics](docs/diagnostics.md) for the response-header allowlist, record format and capture behavior.
-
-## Exports
-
-Optional exports work with `rest request`, `rest poll` and `run`. JSONL diagnostics are still written. Without `--export`, no export files are created.
-
-```sh
-npm run dev -- rest request --profile example-profile --path /example --export csv
-npm run dev -- rest poll --profile example-profile --path /example --interval 60 --count 120 --export summary
-npm run dev -- rest poll --profile example-profile --path /example --interval 60 --count 120 --export both
-npm run dev -- rest request --profile example-profile --path /example --export csv --output ~/saf-results/request.csv
-npm run dev -- run --profile example-profile --request ~/.config/saf-cli-tester/requests/minute-poll.yaml --export both --output ~/saf-results
-```
+`rest request`, `rest poll` and `run` support exports. All three Kafka commands also expose the same export options with Kafka statistics and metadata.
 
 | Format | Default file under `<config-dir>/logs/` | Contents |
 | --- | --- | --- |
-| `csv` | `<runId>.csv` | One allowlisted row per completed request, including failures |
-| `summary` | `<runId>.summary.json` | Run metadata and aggregate statistics |
-| `both` | Both files above | CSV and summary |
-
-`--output` requires `--export`. For one format it is an exact filename; for `both` it is a directory containing run-ID filenames. Parent directories are created and existing files are never overwritten. Default export paths inside Git repositories, including symlinked locations, are rejected; explicit output paths are user-selected.
-
-Exports use central redaction and exclude request payloads, headers, query values, response bodies, OAuth diagnostics and certificate material. Keep them outside Git. See [export schemas and examples](docs/diagnostics.md#optional-run-exports).
-
-## PROD Safety
-
-The profile fixes the environment, and each run displays it. **POST, PUT, PATCH and DELETE in PROD require `--allow-prod-write`.** The guard runs before authentication, body-file reads or network access. It cannot be disabled in application configuration.
-
-For an intentional, authorized PROD write, using a separate profile named `example-prod` configured with `environment: PROD`:
+| `csv` | `<runId>.csv` | Allowlisted per-request REST or per-message Kafka metadata and error records. |
+| `summary` | `<runId>.summary.json` | Run metadata and aggregate transport statistics. |
+| `both` | Both files | CSV and summary. |
 
 ```sh
-npm run dev -- rest request --profile example-prod --method POST --path /example --body-file ~/saf-test-data/request.json --header 'Content-Type: application/json' --allow-prod-write
+npm run dev -- rest poll \
+  --profile <profile-name> --path /some/path --interval 60 --count 10 --export both
+npm run dev -- rest request \
+  --profile <profile-name> --path /some/path --export csv --output ~/saf-results/request.csv
 ```
 
-Mutating polls also require an explicit interval.
+`--output` requires `--export`: it is an exact filename for one format or a directory for `both`. Parent directories are created; existing files are never overwritten. Default exports inside Git repositories (including symlinked locations) are rejected. Explicit output paths are user-selected; keep them outside Git.
+
+Exports use central redaction and exclude payloads, headers, query values, response bodies and certificate material. Kafka admin operations produce summaries but no per-message success rows; group details are in console/JSONL. See [diagnostic/export schemas](docs/diagnostics.md).
+
+## Native Kafka
+
+Native Kafka uses the Kafka protocol over TechUser mTLS, not HTTP. HTTP version settings do not apply; OAuth2/SASL broker authentication is unsupported. The profile supplies brokers, credentials and environment. See [Native Kafka details](docs/kafka.md).
+
+### Connection test
+
+```sh
+npm run dev -- kafka connection-test --profile <profile-name>
+```
+
+Connects an admin client, requests broker metadata and disconnects without consuming. Success does not prove topic or group ACL access. A UUID client ID is generated per run unless supplied through `--client-id`.
+
+### Consume
+
+```sh
+npm run dev -- kafka consume \
+  --profile <profile-name> --topic <topic> --group-id <group-id> --duration 1m
+```
+
+At least one bound is required: count or duration. Both may be supplied; the first reached stops consumption. A count-only run can wait indefinitely if too few records arrive. Duration starts before connection, and cleanup can extend the elapsed run time.
+
+Existing groups resume committed offsets. New/uncommitted groups start at latest by default; `--from-beginning` selects earliest available records without resetting committed offsets. **Consumption advances group offsets**; use an authorized dedicated diagnostic group. Ctrl+C/SIGTERM stops consumption gracefully.
+
+The CLI requires a non-empty group ID and sends it unchanged; the SAF naming convention is not enforced or warned on. Kafka producing, SAF payload crypto and business validation are not implemented.
+
+### Consumer groups
+
+```sh
+npm run dev -- kafka group-describe \
+  --profile <profile-name> --group-id <group-id>
+```
+
+Read-only inspection reports state, protocol, active member count and safe member metadata. It does not create a group, join it or change offsets. Use it to investigate protocol mismatches and rebalances before changing consumer configuration. This client advertises `RoundRobinAssigner`; there is no assignor-selection flag. An inactive `Empty` group is valid; a missing or `Dead` group reports `KAFKA_GROUP_NOT_FOUND`.
+
+### Viewing payloads
+
+```sh
+npm run dev -- kafka consume \
+  --profile <profile-name> --topic <topic> --group-id <group-id> \
+  --duration 1m --include-payload
+```
+
+Payloads are hidden by default. `--include-payload` prints redacted JSON/text values and also enables bounded JSON object/array payload inclusion in local JSONL. Binary data is represented by metadata. Keys and arbitrary headers remain omitted, and CSV/summary exports remain payload-free.
+
+`--max-payload-bytes` limits persistent diagnostics only, not terminal output. Business data may remain sensitive after redaction; protect both displayed and stored data. See [payload formatting and limits](docs/kafka.md#viewing-consumed-payloads).
+
+## Included templates
+
+| Tracked template | Purpose |
+| --- | --- |
+| [saf-receivers.yaml](templates/general-api/saf-receivers.yaml) | POST `/general/v3/saf-receivers`. |
+| [saf-insurers.yaml](templates/general-api/saf-insurers.yaml) | POST `/general/v3/saf-insurers`. |
+
+Both templates require shared profile credentials and work with REST OAuth2 or mTLS. They supply request ID/time and user agent; no `onBehalfOf` is added. Executable General API templates live in `templates/`, not `examples/`.
+
+Supported placeholders in request bodies and permitted header values:
+
+| Placeholder | Value |
+| --- | --- |
+| `{{uuid}}` | New UUID for each request. |
+| `{{nowUtc}}` | Current UTC timestamp for each request. |
+| `{{env:VARIABLE_NAME}}` | Nonempty exported environment variable. |
+| `{{profile:credentials.shared.licenceKey}}` | Shared profile licence key. |
+| `{{profile:credentials.shared.password}}` | Shared profile password. |
+
+Repeated UUID/time references within one request share their values; each poll iteration receives fresh values. Profile access is allowlisted to those two shared fields. Unknown/malformed placeholders or missing values fail before authentication/network access. No expressions or arbitrary property traversal are supported. See [templates](docs/templates.md).
+
+`examples/` contains [the full profile](examples/profile.full.example.yaml), [OAuth2](examples/profile.oauth2.example.yaml), [mTLS](examples/profile.mtls.example.yaml) and [request schema](examples/request.example.yaml) references.
+
+## Local custom requests
+
+Keep user-specific YAML requests and customer payloads outside Git, under `~/.config/saf-cli-tester/requests/`. Copy/adapt the request reference and consult [the request schema](docs/requests.md).
+
+```sh
+npm run dev -- run \
+  --profile <profile-name> \
+  --request ~/.config/saf-cli-tester/requests/custom-request.yaml
+```
+
+## Diagnostics and logs
+
+Each REST/Kafka run writes `<config-dir>/logs/<runId>.jsonl` and prints its run ID and log path. REST records include status/latency, profile/environment, request/correlation IDs when available and actual `httpVersion`. HTTP 4xx/5xx records include bounded sanitized JSON/text response diagnostics; OAuth failures may include sanitized authentication-stage diagnostics.
+
+REST summaries report request/success counts, status/timeout counts, rates and min/average/p50/p95/max latency. Kafka summaries report messages, bytes, partitions, errors, duration and throughput. Group inspection records safe state/protocol/member metadata.
+
+Request bodies, query values and arbitrary headers are omitted. Central redaction applies, but logs can still contain sensitive business data. See [diagnostics](docs/diagnostics.md) for fields, body limits, classification and exports.
+
+| Exit code | Meaning |
+| --- | --- |
+| `0` | Successful command; REST run had no failed requests. |
+| `1` | Invalid arguments/configuration, operation failure or failed REST request. |
+| `130` | REST run or Kafka operation interrupted by Ctrl+C/SIGTERM without another failure. |
+
+## PROD safety
+
+The profile fixes the environment and each run displays it. **POST / PUT / PATCH / DELETE in PROD require `--allow-prod-write`.** The guard executes before authentication, body-file reads or network access and cannot be disabled in application configuration.
+
+For an intentional, authorized write using a profile configured with `environment: PROD`:
+
+```sh
+npm run dev -- rest request \
+  --profile <prod-profile-name> --method POST --path /some/path \
+  --body-file ~/saf-test-data/request.json --header 'Content-Type: application/json' \
+  --allow-prod-write
+```
+
+Mutating polls also require an explicit interval. This flag does not provide Kafka permissions or prevent consumer offset changes.
 
 ## Security
 
-- Keep credentials, profiles, certificates, customer payloads, logs and exports outside the repository. Use restrictive permissions for manually created files and directories.
-- Never pass real secrets in CLI arguments: shell history and process listings can expose them. Use exported variables, a secret manager or a protected external profile.
-- HTTPS and certificate verification are required; redirects are not followed. Verify OAuth discovery/token endpoints before providing secrets.
-- Central recursive redaction protects recognized secret fields and registered secrets/tokens, but profile names, path segments and correlation IDs may still be sensitive.
+- Keep real profiles, credentials, certificates, customer payloads, logs and exports **outside Git**.
+- Never pass real secrets in CLI arguments: shell history and process listings expose them. Use protected profiles, exported variables or a secret manager; use external body files for sensitive payloads.
+- Apply restrictive permissions to manually created files/directories (`0600`/`0700`). New log/export files use `0600` and new directories `0700`; existing directory permissions are unchanged.
+- HTTPS and server certificate/hostname verification remain enabled. Verify trusted OAuth endpoints before supplying credentials; redirects are not followed. Tokens stay in memory, and certificate/private-key material is not logged or converted to files.
+- Logs and terminal payload output may contain sensitive business data. **Central redaction is not a substitute for safe storage.**
 
-New log/export files use mode `0600` and new directories `0700`; existing directory permissions are unchanged. Ignore rules do not protect already tracked files or arbitrary payload filenames. Before any commit or push, inspect `git status` and `git diff --cached`. Read [security guidance](docs/security.md) before using real SAF data.
-
-## Exit Codes
-
-| Code | Meaning |
-| --- | --- |
-| `0` | Command completed successfully; a request run had no failed requests |
-| `1` | Invalid arguments/configuration, command failure, or at least one failed request |
-| `130` | Request run interrupted by Ctrl+C or SIGTERM |
-
-## Useful Commands
-
-| Task | Command |
-| --- | --- |
-| Top-level help | `npm run dev -- --help` |
-| Request flags | `npm run dev -- rest request --help` |
-| Polling flags | `npm run dev -- rest poll --help` |
-| Template flags | `npm run dev -- run --help` |
-| Local paths | `npm run dev -- config paths` |
-| Application settings | `npm run dev -- config show` |
-| List profiles | `npm run dev -- profiles list` |
-| Inspect a profile | `npm run dev -- profiles show example-profile` |
-| Validate locally | `npm run dev -- profiles validate example-profile` |
+Ignore rules do not protect already tracked files or arbitrary payload names. Review `git status` and `git diff --cached` before any commit/push. Read [security guidance](docs/security.md) before using real SAF data.
 
 ## Troubleshooting
 
 | Symptom | What to check |
 | --- | --- |
-| `AUTH_ERROR` | Run `profiles validate` first. For OAuth2, check trusted discovery/token URLs, credentials, scope and token authentication method; inspect the JSONL `oauth2` stage/status and sanitized error fields when present. For mTLS, check P12 readability and password compatibility. Local validation does not prove server acceptance. |
-| HTTP `401`/`403` | Check that the TechUser and credentials belong to the selected environment and have access to the resource. These are REST response statuses; token-endpoint failures are reported separately as `AUTH_ERROR`. |
-| HTTP `404` | Check `rest.baseUrl` and the resource path. `/example` is a placeholder; request paths resolve from the origin, not beneath a base URL path. |
-| HTTP `500` | Inspect sanitized response diagnostics and request/correlation IDs in JSONL. Use bounded polling to investigate recurrence and share relevant sanitized evidence through an approved support channel. |
+| `CONFIG_ERROR` | Validate the profile, exported variables, template and command arguments; consult command `--help`. |
+| `AUTH_ERROR` | Run `profiles validate`; check OAuth endpoints, credentials, scope/token method, or P12/password. Inspect sanitized OAuth stage/status diagnostics. Local validation does not prove service acceptance. |
+| HTTP `401` / `403` | Check environment, TechUser credentials and resource permissions; token failures are reported separately as `AUTH_ERROR`. |
+| HTTP `404` | Check base URL and actual resource path; paths resolve from the origin. |
+| HTTP `500` | Inspect sanitized response diagnostics and request/correlation IDs; use bounded polling to investigate recurrence. |
+| HTTP/2 negotiation failure | Verify endpoint/proxy ALPN `h2` support; compare explicit `1.1`. There is no automatic fallback. |
+| `TLS_ERROR` / Kafka TLS failure | Check trust chain, hostname, certificate validity and client P12/password; verification is never bypassed. |
+| Kafka connection failure | Check profile brokers, network reachability, mTLS and broker authorization; metadata success does not prove topic/group access. |
+| `KAFKA_GROUP_PROTOCOL_ERROR` | Use `kafka group-describe` to inspect existing member protocols; this client supports `RoundRobinAssigner`. |
+| `KAFKA_GROUP_NOT_FOUND` | Verify the existing group ID; inspection does not create a group. |
+| 0 messages consumed | Check topic/group access and offsets. New groups start at latest; `--from-beginning` does not reset committed offsets. |
+
+See [REST troubleshooting](docs/rest-testing.md#protocol-troubleshooting), [Kafka diagnostics](docs/kafka.md#consumer-group-diagnostics) and [diagnostic fields](docs/diagnostics.md).
 
 ## Documentation
 
-- [Architecture](docs/architecture.md) — authoritative architecture specification, including future milestones.
-- [Configuration](docs/configuration.md) — defaults, precedence and template settings.
-- [Profiles](docs/profiles.md) — authentication fields and local validation.
-- [Diagnostics](docs/diagnostics.md) — JSONL response capture and export schemas.
-- [Security](docs/security.md) — secret handling, local storage and PROD protection.
+| Document | Purpose |
+| --- | --- |
+| [Architecture](docs/architecture.md) | Architecture specification and future direction. |
+| [Configuration](docs/configuration.md) | Application settings, defaults and precedence. |
+| [Profiles](docs/profiles.md) | Credentials, validation and legacy migration. |
+| [Requests](docs/requests.md) | YAML request schema and CLI overrides. |
+| [Templates](docs/templates.md) | Runtime placeholders and General API templates. |
+| [REST testing](docs/rest-testing.md) | Response display, HTTP versions and troubleshooting. |
+| [Native Kafka](docs/kafka.md) | Connectivity, offsets, payloads and group diagnostics. |
+| [Diagnostics](docs/diagnostics.md) | JSONL fields, error capture and exports. |
+| [Security](docs/security.md) | Secret handling, safe storage and PROD protection. |
 
 ## Development
+
+Requires Node.js >=20.15.1 and npm.
 
 ```sh
 npm ci
@@ -485,52 +513,15 @@ npm test
 npm run build
 ```
 
-No native build dependencies are required. `check` provides strict TypeScript checks; there is no lint configuration. Tests use dummy credentials and mocks/local servers. Real SAF tests must be initiated manually.
+No native build dependencies are required. `check` runs strict TypeScript checks; no lint configuration is present. Tests use dummy credentials, mocks and local servers; HTTP transport tests generate temporary certificates with OpenSSL. Real SAF tests must be initiated manually.
 
 ## Roadmap
 
-The following are planned, **not implemented**:
+Planned, **not implemented**:
 
-- Native Kafka producing and SAF cryptographic payload handling.
+- Kafka producing and SAF payload encryption/decryption/signature handling.
 - Automatic TechUser enrolment.
 - Interactive profile creation.
 - Reusable scenarios, profile comparisons and advanced reporting.
 
-See [the architecture specification](docs/architecture.md) for the broader direction. Its proposed commands and future requirements do not imply current CLI support.
-## Native Kafka
-
-When consume reports `The group member's supported protocols are incompatible with those of existing members`, inspect the existing group:
-
-```sh
-npm run dev -- kafka group-describe --profile <profile-name> --group-id <group-id>
-```
-
-This read-only inspection does not create a group or change offsets. See [consumer group diagnostics](docs/kafka.md#consumer-group-diagnostics).
-
-REST supports OAuth2 or mTLS; Native Kafka supports mTLS only. Kafka automatically selects authentication and environment from the profile.
-
-```sh
-npm run dev -- kafka connection-test --profile <profile-name>
-npm run dev -- kafka consume --profile <profile-name> \
-  --topic eh.saf.<ecohubId>.commission.out.v1 \
-  --group-id CG-123456-IDP123456 --count 10
-```
-
-Replace placeholders with your own values. EcoHub SAF 1.2.0 documents consumer group pattern `^CG-(\d{5,6})-IDP(\d{6})$`. The CLI requires a non-empty `--group-id` but does not enforce or warn on this naming convention. The supplied ID is sent unchanged to Kafka, which decides whether it is accepted. Client IDs are UUIDs, generated per run unless supplied with `--client-id`. Consume requires `--count` or `--duration`, resumes group offsets, and starts new groups at latest by default. Payload logging is restricted to metadata by default. Kafka produce is not implemented yet. See [Native Kafka](docs/kafka.md) for offsets, local logs, exports and the EcoHub SAF Message Broker System 1.2.0 scope.
-
-## HTTP protocol testing
-
-Use `--http-version auto|1.1|2` with `rest request`, `rest poll`, or `run`:
-
-- `auto` preserves the current default HTTP/1.1 transport behavior.
-- `1.1` forces the existing Node HTTP/1.1 transport.
-- `2` forces HTTPS HTTP/2 and fails if TLS ALPN cannot negotiate `h2`. There is no HTTP/1.1 fallback or cleartext HTTP/2 support.
-
-The actual response version is displayed per request and logged in JSONL as `httpVersion`. OAuth2 and P12 mTLS work with both transports; token acquisition keeps its existing behavior.
-
-```sh
-npm run dev -- rest request --profile <profile-name> --method GET --path /some/path --http-version 2 --show-response
-npm run dev -- run --profile <profile-name> --request templates/general-api/saf-receivers.yaml --http-version 1.1 --show-response
-```
-
-See [REST protocol testing and smoke tests](docs/rest-testing.md).
+See [architecture and future milestones](docs/architecture.md). Proposed future commands there are not part of the current CLI reference.
