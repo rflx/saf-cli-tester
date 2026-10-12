@@ -544,6 +544,7 @@ See [REST troubleshooting](docs/rest-testing.md#protocol-troubleshooting), [Kafk
 | --- | --- |
 | [Architecture](docs/architecture.md) | Architecture specification and future direction. |
 | [Installation and releases](docs/installation.md) | Global installation, updates and maintainer release workflow. |
+| [Release guide](docs/releasing.md) | Step-by-step stable GitHub Release procedure. |
 | [Configuration](docs/configuration.md) | Application settings, defaults and precedence. |
 | [Profiles](docs/profiles.md) | Credentials, validation and legacy migration. |
 | [Requests](docs/requests.md) | YAML request schema and CLI overrides. |

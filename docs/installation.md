@@ -42,6 +42,6 @@ Both commands query the public GitHub Releases API without a token, with a 10-se
 
 ## Maintainer release workflow
 
-Publish a GitHub Release for a stable `vX.Y.Z` tag matching package.json. `.github/workflows/release.yml` runs on release publication and checks out the event’s exact commit SHA. It runs `npm ci`, `npm run check`, `npm test`, `npm run build`, and `npm pack --json`, verifies the generated versioned tarball, copies it to `saf-cli-tester.tgz`, and uploads that fixed filename to the corresponding release. It does not publish to npmjs. Every stable release must have this asset before it is installable; monitor the workflow after publication. This publication-triggered workflow requires mutable releases so the asset can be attached after publication.
+Publish a GitHub Release for a stable `vX.Y.Z` tag matching package.json. `.github/workflows/release.yml` runs on release publication and checks out the release tag. It runs `npm ci`, `npm run check`, `npm test`, `npm run build`, and `npm pack --json`, verifies the generated versioned tarball, copies it to `saf-cli-tester.tgz`, and uploads that fixed filename to the corresponding release. It does not publish to npmjs. Every stable release must have this asset before it is installable; monitor the workflow after publication. This publication-triggered workflow requires mutable releases so the asset can be attached after publication.
 
 `main` is development state. Update commands use the latest published stable GitHub Release, never main or unpublished tags. The CLI never creates tags or releases.
