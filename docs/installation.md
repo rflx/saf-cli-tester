@@ -1,6 +1,10 @@
 # Installation, updates and releases
 
-Use Node.js >=20.15.1 and npm. Development remains:
+Use Node.js >=20.15.1 and npm.
+
+TypeScript and Node.js types remain development dependencies. For global Git installs, `prepare` explicitly installs the checkout's locked dependencies in local mode before building, avoiding npm versions that inherit global mode during Git preparation. `npm run build` continues to use the project-local compiler; no global TypeScript installation is needed.
+
+Development remains:
 
 ```sh
 npm ci
