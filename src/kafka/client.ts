@@ -3,6 +3,7 @@ import { Kafka, logLevel, type KafkaConfig, type EachMessagePayload } from 'kafk
 import { profileSchema, type Profile } from '../profiles/types.js';
 import { MtlsAuthProvider } from '../auth/mtls.js';
 import type { Redactor } from '../logging/redactor.js';
+import { configuredAssignors } from './assignors.js';
 
 export function kafkaCredential(profile: Profile) {
   const parsed = profileSchema.safeParse(profile);
@@ -47,10 +48,12 @@ export async function connectionTest(admin: AdminClient) {
   try { await admin.connect(); await admin.fetchTopicMetadata({ topics: [] }); }
   finally { await admin.disconnect(); }
 }
-// KafkaJS 2.2.4 defaults to [PartitionAssigners.roundRobin], whose protocol name is this.
-export const consumerAssignors = ['RoundRobinAssigner'] as const;
+export const consumerAssignors = [...new Set(configuredAssignors.map(assignor => assignor.label))];
+export function createConsumer(kafka: Pick<Kafka, 'consumer'>, groupId: string) {
+  return kafka.consumer({ groupId, partitionAssigners: configuredAssignors.map(assignor => assignor.factory) });
+}
 export function groupProtocolDiagnostic(profile: string, groupId: string) {
-  return `Consumer group protocol mismatch.\n\nThe selected consumer group already has active members whose supported\npartition assignment protocol is incompatible with this client.\n\nClient supported assignors: ${consumerAssignors.join(', ')}\n\nRun:\n\n  kafka group-describe --profile ${profile} --group-id ${groupId}\n\nto inspect the group's current protocol.`;
+  return `Consumer group protocol mismatch.\n\nThe selected consumer group already has active members whose supported\npartition assignment protocol is incompatible with this client.\n\nClient supported assignors:\n${configuredAssignors.map(assignor => `- ${assignor.label} (${assignor.protocol})`).join('\n')}\n\nRun:\n\n  kafka group-describe --profile ${profile} --group-id ${groupId}\n\nto inspect the group's current protocol.`;
 }
 export type GroupAdminClient = Pick<ReturnType<Kafka['admin']>, 'connect' | 'describeGroups' | 'disconnect'>;
 export async function describeGroup(admin: GroupAdminClient, groupId: string) {

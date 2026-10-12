@@ -8,7 +8,7 @@ import type { Redactor } from '../../logging/redactor.js';
 import { openLog } from '../../logging/jsonl.js';
 import { RunExports, exportFormat } from '../../logging/exports.js';
 import { durationMs } from '../../rest/poller.js';
-import { clientId, connectionTest, consume, createKafka, kafkaError, validateConsume, validateGroupId, describeGroup, groupDescriptionOutput, groupProtocolDiagnostic, consumerAssignors } from '../../kafka/client.js';
+import { clientId, connectionTest, consume, createKafka, createConsumer, kafkaError, validateConsume, validateGroupId, describeGroup, groupDescriptionOutput, groupProtocolDiagnostic, consumerAssignors } from '../../kafka/client.js';
 import { KafkaStats, kafkaCsvFields, messageDiagnostic } from '../../kafka/diagnostics.js';
 
 export function kafkaCommands(program: Command, redactor: Redactor) {
@@ -59,7 +59,7 @@ export function kafkaCommands(program: Command, redactor: Redactor) {
           const group = await describeGroup(client.admin(), String(options.groupId));
           logger.console(groupDescriptionOutput(group));
           await logger.record({ timestamp: new Date().toISOString(), ...metadata, operation: name, ...group, result: 'success' });
-        } else await consume(client.consumer({ groupId: String(options.groupId) }), { ...consumeOptions, signal: controller.signal }, async message => {
+        } else await consume(createConsumer(client, String(options.groupId)), { ...consumeOptions, signal: controller.signal }, async message => {
           const record = { timestamp: new Date().toISOString(), ...metadata, ...messageDiagnostic(message, options.includePayload === true, Number(options.maxPayloadBytes), redactor) };
           await logger.record(record); await exports?.record(record);
           stats.add(message.partition, message.message.value?.length ?? 0);

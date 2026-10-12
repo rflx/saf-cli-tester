@@ -63,7 +63,11 @@ test('Kafka consume CLI accepts group IDs without warnings and passes them uncha
   const previousExit = process.exitCode;
   const output: string[] = [], supplied: string[] = [];
   MtlsAuthProvider.prototype.prepareRequest = async function () { return { headers: {}, tls: { pfx: Buffer.from('mock-p12'), passphrase: 'mock-password' } }; };
-  Kafka.prototype.consumer = function (options) { supplied.push(options.groupId); return mockConsumer().consumer as ReturnType<Kafka['consumer']>; };
+  Kafka.prototype.consumer = function (options) {
+    assert.equal(options.partitionAssigners?.length, 3);
+    assert.deepEqual(Object.keys(options).sort(), ['groupId', 'partitionAssigners']);
+    supplied.push(options.groupId); return mockConsumer().consumer as ReturnType<Kafka['consumer']>;
+  };
   console.log = value => { output.push(String(value)); };
   try {
     await mkdir(join(root, 'profiles'));

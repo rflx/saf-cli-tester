@@ -76,6 +76,7 @@ test('CLI group inspection and consume mismatch use redacted logs and preserve g
       assert.match(output.join('\n'), /KAFKA_GROUP_PROTOCOL_ERROR/);
       assert.match(output.join('\n'), /kafka group-describe --profile test --group-id CG-00001-IDP5061788/);
       assert.match(output.join('\n'), /RoundRobinAssigner/);
+      assert.match(output.join('\n'), /RangeAssignor \(range\)/);
     }
     assert.deepEqual(supplied, Array(6).fill(groupId));
     failure = undefined; state = 'Stable';
@@ -89,6 +90,9 @@ test('CLI group inspection and consume mismatch use redacted logs and preserve g
       records.push(...content.trim().split('\n').map(line => JSON.parse(line)));
     }
     const stable = records.find(record => record.state === 'Stable')!;
+    for (const record of records.filter(record => record.errorType === 'KAFKA_GROUP_PROTOCOL_ERROR')) {
+      assert.deepEqual(record.supportedAssignors, ['RangeAssignor', 'RoundRobinAssigner']);
+    }
     for (const field of ['runId', 'profile', 'environment', 'transport', 'groupId', 'state', 'protocolType', 'protocol', 'memberCount', 'result']) assert.ok(field in stable);
     assert.equal(stable.memberCount, 2);
   } finally {
