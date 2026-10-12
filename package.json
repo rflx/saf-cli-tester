@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "type": "module",
   "private": true,
+  "files": ["dist/", "templates/"],
+  "repository": "github:rflx/saf-cli-tester",
   "bin": {
     "saf-cli-tester": "dist/cli/index.js"
   },
@@ -11,7 +13,8 @@
   },
   "scripts": {
     "dev": "npm run build --silent && node dist/cli/index.js",
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node scripts/executable.mjs",
+    "prepare": "npm run build",
     "check": "tsc --noEmit",
     "test": "tsc --outDir dist-tests && node --test dist-tests/tests/*.test.js"
   },

@@ -25,6 +25,7 @@ Templates are reusable request descriptions, independent of TechUser identity an
 | Placeholder | Value |
 | --- | --- |
 | `{{uuid}}` | Per-request RFC 4122 UUID v4 |
+| `{{toolVersion}}` | Installed application version from package.json; constant and nonsecret, no profile required |
 | `{{nowUtc}}` | Per-request UTC ISO-8601 timestamp with milliseconds and `Z` |
 | `{{env:VARIABLE_NAME}}` | Nonempty exported environment value |
 | `{{profile:credentials.shared.licenceKey}}` | Selected profile's shared licence key |

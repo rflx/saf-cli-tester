@@ -8,9 +8,11 @@ import { profilesCommands } from './commands/profiles.js';
 import { requestFlags, pollFlags, runRequest } from './commands/rest-request.js';
 import { templateCommand } from './commands/run.js';
 import { kafkaCommands } from './commands/kafka.js';
+import { toolVersion } from '../version.js';
+import { checkUpdate } from '../updates.js';
 
 const redactor = new Redactor(); const logger = new Logger(redactor);
-const program = new Command().name('saf-cli-tester').description('SAF REST and Kafka connectivity diagnostics').version('0.1.0')
+const program = new Command().name('saf-cli-tester').description('SAF REST and Kafka connectivity diagnostics').version(toolVersion)
   .option('--config-dir <directory>', 'Local configuration root', '~/.config/saf-cli-tester');
 program.configureOutput({ writeOut: value => process.stdout.write(redactor.text(value)), writeErr: value => process.stderr.write(redactor.text(value)), outputError: () => logger.error('CONFIG_ERROR: Invalid command arguments; use --help') });
 const config = program.command('config');
@@ -22,6 +24,8 @@ requestFlags(rest.command('request')).action(async (options: Record<string,unkno
 pollFlags(requestFlags(rest.command('poll'))).action(async (options: Record<string,unknown>) => runRequest(program, options, redactor, true));
 templateCommand(program, redactor);
 kafkaCommands(program, redactor);
+program.command('update-check').description('Check the latest published GitHub Release').action(async () => checkUpdate());
+program.command('update').description('Install the latest published GitHub Release globally').action(async () => checkUpdate({ install: true }));
 try { await program.parseAsync(); }
 catch (error) {
   // Schema errors may embed untrusted values; emit field paths only.

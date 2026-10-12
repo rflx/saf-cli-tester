@@ -1,4 +1,5 @@
 import type { Profile } from '../profiles/types.js';
+import { toolVersion } from '../version.js';
 import { sharedCredential } from '../profiles/validator.js';
 import { randomUUID } from 'node:crypto';
 import type { Redactor } from '../logging/redactor.js';
@@ -17,6 +18,7 @@ export function preparePlaceholders(value: unknown, redactor: Redactor, profile?
         const token = match[1]!;
         if (token === 'uuid') parts.push(uuid => uuid);
         else if (token === 'nowUtc') parts.push((_uuid, now) => now);
+        else if (token === 'toolVersion') parts.push(toolVersion);
         else if (token.startsWith('profile:')) {
           const key = token === 'profile:credentials.shared.licenceKey' ? 'licenceKey'
             : token === 'profile:credentials.shared.password' ? 'password' : undefined;

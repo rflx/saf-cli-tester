@@ -7,6 +7,7 @@ Supported placeholders in body strings and permitted header values:
 | Placeholder | Runtime value |
 | --- | --- |
 | `{{uuid}}` | New RFC 4122 version 4 UUID for each HTTP request |
+| `{{toolVersion}}` | Installed application version from package.json; constant and nonsecret, no profile required |
 | `{{nowUtc}}` | Current UTC ISO-8601 / RFC3339 timestamp, such as `2026-10-06T13:45:12.345Z` |
 | `{{env:VARIABLE_NAME}}` | Nonempty exported process environment value |
 | `{{profile:credentials.shared.licenceKey}}` | Selected profile shared licence key |

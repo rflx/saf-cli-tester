@@ -15,6 +15,37 @@ SAF CLI Tester is a local diagnostic CLI for testing EcoHub SAF REST and Native 
 
 [Quick Start](#quick-start) · [Configuration](#how-configuration-is-organized) · [CLI reference](#cli-command-reference) · [REST](#rest) · [Native Kafka](#native-kafka) · [Security](#security) · [Documentation](#documentation)
 
+## Installation
+
+### Development
+
+```sh
+npm ci
+npm run build
+npm run dev -- --help
+```
+
+### Global installation from GitHub
+
+Requires Node.js >=20.15.1 and npm. Replace `vX.Y.Z` with a published release tag:
+
+```sh
+npm install -g github:rflx/saf-cli-tester#vX.Y.Z
+saf-cli-tester --version
+saf-cli-tester --help
+```
+
+`npm install -g github:rflx/saf-cli-tester` installs the default branch and is less reproducible. Git installations build automatically without pre-existing `dist/` or native build dependencies.
+
+## Updating
+
+```sh
+saf-cli-tester update-check
+saf-cli-tester update
+```
+
+Updates use the latest published stable GitHub Release and install its exact tag. `update` runs directly without a confirmation prompt. Local SAF configuration, profiles, certificates, requests and logs are untouched. Normal commands never contact GitHub for updates. Development checkouts can use `npm run dev -- update-check`; self-update requires a global npm installation. See [installation and releases](docs/installation.md).
+
 ## Quick Start
 
 Requires **Node.js >=20.15.1** and npm. From the repository root:
@@ -116,6 +147,8 @@ Verify trusted OAuth discovery/token endpoints before supplying credentials; dis
 | `kafka consume` | Consume bounded Kafka messages. |
 | `kafka group-describe` | Inspect an existing consumer group. |
 | `help [command]` | Display help; command groups also expose this helper. |
+| `update-check` | Check the latest published GitHub Release. |
+| `update` | Install the latest published GitHub Release globally. |
 
 The command groups are `config`, `profiles`, `rest` and `kafka`. Every command accepts `-h, --help`. Tables below list every command option; defaults described as “resolved settings” come from configuration precedence, rather than a Commander flag default. `—` means no default value.
 
@@ -128,6 +161,10 @@ The command groups are `config`, `profiles`, `rest` and `kafka`. Every command a
 | `-h, --help` | — | Display help. |
 
 Place global configuration options before the subcommand.
+
+### update-check and update
+
+`update-check` and `update` have no command-specific options beyond `-h, --help`.
 
 ### config
 
@@ -412,6 +449,7 @@ Supported placeholders in request bodies and permitted header values:
 | Placeholder | Value |
 | --- | --- |
 | `{{uuid}}` | New UUID for each request. |
+| `{{toolVersion}}` | Installed CLI version from package metadata; nonsecret, no profile required. |
 | `{{nowUtc}}` | Current UTC timestamp for each request. |
 | `{{env:VARIABLE_NAME}}` | Nonempty exported environment variable. |
 | `{{profile:credentials.shared.licenceKey}}` | Shared profile licence key. |
@@ -493,6 +531,7 @@ See [REST troubleshooting](docs/rest-testing.md#protocol-troubleshooting), [Kafk
 | Document | Purpose |
 | --- | --- |
 | [Architecture](docs/architecture.md) | Architecture specification and future direction. |
+| [Installation and releases](docs/installation.md) | Global installation, updates and maintainer release workflow. |
 | [Configuration](docs/configuration.md) | Application settings, defaults and precedence. |
 | [Profiles](docs/profiles.md) | Credentials, validation and legacy migration. |
 | [Requests](docs/requests.md) | YAML request schema and CLI overrides. |
