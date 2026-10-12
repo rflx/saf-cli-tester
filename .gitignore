@@ -16,4 +16,5 @@ certificates/
 *.jsonl
 *.csv
 *.summary.json
+saf-cli-tester-*.tgz
 .DS_Store

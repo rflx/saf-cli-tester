@@ -17,7 +17,13 @@ export function validateTag(tag: unknown): string {
   }
   return tag;
 }
-export async function latestRelease(fetcher: typeof fetch = fetch, timeoutMs = 10000): Promise<{ tag: string; version: string }> {
+export function releaseAssetUrl(tag: string, value: unknown): string {
+  validateTag(tag);
+  const expected = `https://github.com/${repository}/releases/download/${tag}/saf-cli-tester.tgz`;
+  if (value !== expected) throw new Error('UPDATE_INVALID_ASSET_URL: Expected the tagged GitHub release asset URL');
+  return expected;
+}
+export async function latestRelease(fetcher: typeof fetch = fetch, timeoutMs = 10000): Promise<{ tag: string; version: string; assetUrl: string }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -31,7 +37,12 @@ export async function latestRelease(fetcher: typeof fetch = fetch, timeoutMs = 1
     try { data = await response.json(); } catch { if (controller.signal.aborted) throw new Error('UPDATE_TIMEOUT: GitHub request timed out'); throw new Error('UPDATE_RESPONSE_ERROR: Malformed GitHub JSON'); }
     if (!data || typeof data !== 'object' || !('tag_name' in data) || !('draft' in data) || !('prerelease' in data) || data.draft !== false || data.prerelease !== false) throw new Error('UPDATE_RESPONSE_ERROR: Expected a published stable release');
     const tag = validateTag(data.tag_name);
-    return { tag, version: tag.slice(1) };
+    if (!('assets' in data) || !Array.isArray(data.assets)) throw new Error('UPDATE_RESPONSE_ERROR: Expected release assets');
+    const assets = data.assets.filter((asset: unknown) => asset && typeof asset === 'object' && 'name' in asset && asset.name === 'saf-cli-tester.tgz');
+    if (assets.length === 0) throw new Error('UPDATE_NO_ASSET: Release has no saf-cli-tester.tgz asset');
+    if (assets.length !== 1 || assets[0].state !== 'uploaded') throw new Error('UPDATE_RESPONSE_ERROR: Expected one uploaded saf-cli-tester.tgz asset');
+    const assetUrl = releaseAssetUrl(tag, assets[0].browser_download_url);
+    return { tag, version: tag.slice(1), assetUrl };
   } catch (error) {
     if (controller.signal.aborted) throw new Error('UPDATE_TIMEOUT: GitHub request timed out');
     if (error instanceof Error && error.message.startsWith('UPDATE_')) throw error;
@@ -62,6 +73,7 @@ export async function checkUpdate(options: { current?: string; latest?: typeof l
   // Validate again at the execution boundary, even for injected release providers.
   validateTag(release.tag);
   if (release.version !== release.tag.slice(1)) throw new Error('UPDATE_INVALID_VERSION: Release version/tag mismatch');
+  const assetUrl = releaseAssetUrl(release.tag, release.assetUrl);
   const comparison = compareVersions(current, release.version);
   const print = options.print ?? console.log;
   print(`Installed version: ${current}\nLatest version:    ${release.version}\n`);
@@ -69,6 +81,6 @@ export async function checkUpdate(options: { current?: string; latest?: typeof l
   if (!options.install) { print(`Update available: ${release.version}\n\nRun:\nsaf-cli-tester update`); return; }
   if (!await (options.global ?? isGlobalInstallation)()) throw new Error('UPDATE_INSTALLATION_ERROR: This CLI is running from a development checkout or a non-global installation. Use git pull / your normal development workflow, or install globally with npm.');
   print(`Installing ${current} → ${release.version} from ${release.tag}`);
-  await (options.execute ?? executeNpm)(['install', '-g', `github:${repository}#${release.tag}`]);
+  await (options.execute ?? executeNpm)(['install', '-g', assetUrl]);
   print(`Installed SAF CLI Tester ${release.version}.`);
 }

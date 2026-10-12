@@ -25,17 +25,29 @@ npm run build
 npm run dev -- --help
 ```
 
-### Global installation from GitHub
+### Stable releases and development main
 
-Requires Node.js >=20.15.1 and npm. Replace `vX.Y.Z` with a published release tag:
+Requires Node.js >=20.15.1 and npm.
+
+Latest stable:
 
 ```sh
-npm install -g github:rflx/saf-cli-tester#vX.Y.Z
-saf-cli-tester --version
-saf-cli-tester --help
+npm install -g https://github.com/rflx/saf-cli-tester/releases/latest/download/saf-cli-tester.tgz
 ```
 
-`npm install -g github:rflx/saf-cli-tester` installs the default branch and is less reproducible. Git installations build automatically without pre-existing `dist/` or native build dependencies.
+Specific stable version:
+
+```sh
+npm install -g https://github.com/rflx/saf-cli-tester/releases/download/v0.1.0/saf-cli-tester.tgz
+```
+
+Latest development state from main:
+
+```sh
+npm install -g github:rflx/saf-cli-tester
+```
+
+The direct repository install is development/main. Git installations build automatically.
 
 ## Updating
 
@@ -44,7 +56,7 @@ saf-cli-tester update-check
 saf-cli-tester update
 ```
 
-Updates use the latest published stable GitHub Release and install its exact tag. `update` runs directly without a confirmation prompt. Local SAF configuration, profiles, certificates, requests and logs are untouched. Normal commands never contact GitHub for updates. Development checkouts can use `npm run dev -- update-check`; self-update requires a global npm installation. See [installation and releases](docs/installation.md).
+`update-check` compares the installed package version with the latest published stable GitHub Release without modifying anything. `update` installs that release’s `saf-cli-tester.tgz` asset from its exact tagged URL when a newer version is available. `update` runs directly without a confirmation prompt. Local SAF configuration, profiles, certificates, requests and logs are untouched. Normal commands never contact GitHub for updates. Development checkouts can use `npm run dev -- update-check`; self-update requires a global npm installation. See [installation and releases](docs/installation.md).
 
 ## Quick Start
 

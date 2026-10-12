@@ -4,7 +4,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { packageRoot, toolVersion } from '../src/version.js';
-import { checkUpdate, compareVersions, latestRelease, isGlobalInstallation } from '../src/updates.js';
+import { checkUpdate, compareVersions, latestRelease, isGlobalInstallation, releaseAssetUrl } from '../src/updates.js';
 import { preparePlaceholders } from '../src/requests/placeholders.js';
 import { Redactor } from '../src/logging/redactor.js';
 
@@ -24,14 +24,14 @@ test('package version, CLI and nonsecret runtime placeholder share one source', 
 });
 
 const mock = (body: string, status = 200, headers?: HeadersInit): typeof fetch => async () => new Response(body, { status, headers });
-const release = (tag = 'v0.2.0') => JSON.stringify({ tag_name: tag, draft: false, prerelease: false });
+const release = (tag = 'v0.2.0') => JSON.stringify({ tag_name: tag, draft: false, prerelease: false, assets: [{ name: 'saf-cli-tester.tgz', state: 'uploaded', browser_download_url: `https://github.com/rflx/saf-cli-tester/releases/download/${tag}/saf-cli-tester.tgz` }] });
 test('GitHub release response and useful unauthenticated headers', async () => {
   const result = await latestRelease(async (url, options) => {
     assert.match(String(url), /releases\/latest$/);
     assert.deepEqual(options?.headers, { Accept: 'application/vnd.github+json', 'User-Agent': `saf-cli-tester/${toolVersion}` });
     return new Response(release());
   });
-  assert.deepEqual(result, { tag: 'v0.2.0', version: '0.2.0' });
+  assert.deepEqual(result, { tag: 'v0.2.0', version: '0.2.0', assetUrl: 'https://github.com/rflx/saf-cli-tester/releases/download/v0.2.0/saf-cli-tester.tgz' });
 });
 test('semantic comparison handles patch/minor/major, equality and newer installations', async () => {
   for (const [a, b, expected] of [['0.2.0','0.2.0',0], ['0.2.1','0.2.0',1], ['0.3.0','0.2.9',1], ['1.0.0','0.9.9',1], ['0.10.0','0.9.0',1], ['0.1.0','0.2.0',-1]] as const) assert.equal(compareVersions(a,b),expected);
@@ -55,11 +55,11 @@ test('updates execute exact validated npm arguments and preserve config', async 
   const calls: string[][] = [];
   const options = { current: '0.1.0', latest: () => latestRelease(mock(release())), print: () => {}, install: true, global: async () => true, execute: async (args: string[]) => { calls.push(args); return ''; } };
   await checkUpdate(options);
-  assert.deepEqual(calls, [['install','-g','github:rflx/saf-cli-tester#v0.2.0']]);
+  assert.deepEqual(calls, [['install','-g','https://github.com/rflx/saf-cli-tester/releases/download/v0.2.0/saf-cli-tester.tgz']]);
   await checkUpdate({ ...options, current: '0.2.0' });
   await checkUpdate({ ...options, current: '0.3.0' });
   assert.equal(calls.length,1);
-  await assert.rejects(checkUpdate({ ...options, latest: async () => ({ tag:'v1.2.3$(evil)',version:'1.2.3' }) }), /INVALID_TAG/);
+  await assert.rejects(checkUpdate({ ...options, latest: async () => ({ tag:'v1.2.3$(evil)',version:'1.2.3', assetUrl: '' }) }), /INVALID_TAG/);
   assert.equal(calls.length,1);
   await assert.rejects(checkUpdate({ ...options, global: async () => false }), /development checkout/);
   await assert.rejects(checkUpdate({ ...options, execute: async () => { throw new Error('UPDATE_INSTALL_ERROR: npm permission failure'); } }), /npm permission failure/);
@@ -67,3 +67,22 @@ test('updates execute exact validated npm arguments and preserve config', async 
   assert.equal(await isGlobalInstallation(async () => { throw new Error('must not execute'); }), false);
   assert.doesNotMatch(readFileSync(join(packageRoot,'src/updates.ts'),'utf8'), /writeFile|mkdir|configPaths|shell: true|sudo/);
 });
+
+ test('asset selection rejects missing, incomplete, duplicate and unsafe assets', async () => {
+  const data = JSON.parse(release());
+  for (const [assets, code] of [
+    [[], 'NO_ASSET'], [[{ ...data.assets[0], name: 'other.tgz' }], 'NO_ASSET'],
+    [[{ ...data.assets[0], state: 'new' }], 'RESPONSE_ERROR'],
+    [[data.assets[0], data.assets[0]], 'RESPONSE_ERROR'],
+    [[{ ...data.assets[0], browser_download_url: 'https://evil.invalid/package.tgz' }], 'INVALID_ASSET_URL']
+  ] as const) await assert.rejects(latestRelease(mock(JSON.stringify({ ...data, assets }))), new RegExp(`UPDATE_${code}`));
+  for (const url of ['http://github.com/rflx/saf-cli-tester/releases/download/v0.2.0/saf-cli-tester.tgz',
+    'https://github.com/rflx/saf-cli-tester/releases/latest/download/saf-cli-tester.tgz',
+    data.assets[0].browser_download_url + '?x=1', data.assets[0].browser_download_url + '#fragment']) {
+    assert.throws(() => releaseAssetUrl('v0.2.0', url), /INVALID_ASSET_URL/);
+  }
+ });
+ test('update-check never invokes npm or probes global installation', async () => {
+  await checkUpdate({ current: '0.1.0', latest: () => latestRelease(mock(release())), print: () => {},
+    global: async () => { throw new Error('must not probe'); }, execute: async () => { throw new Error('must not install'); } });
+ });

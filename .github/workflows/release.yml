@@ -1,0 +1,43 @@
+name: Release package
+on:
+  release:
+    types: [published]
+permissions:
+  contents: write
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Validate release version
+        run: |
+          node --input-type=module -e 'import fs from "node:fs"; const p = JSON.parse(fs.readFileSync("package.json")); if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(p.version) || process.env.RELEASE_TAG !== `v${p.version}`) throw new Error("Release tag must match stable package version");'
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - run: npm run build
+      - name: Pack release asset
+        run: |
+          npm pack --json > "$RUNNER_TEMP/pack.json"
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const p = JSON.parse(fs.readFileSync('package.json'));
+          const packed = JSON.parse(fs.readFileSync(`${process.env.RUNNER_TEMP}/pack.json`));
+          const expected = `saf-cli-tester-${p.version}.tgz`;
+          if (packed.length !== 1 || packed[0].filename !== expected) throw new Error('Unexpected npm pack filename');
+          fs.copyFileSync(expected, 'saf-cli-tester.tgz');
+          NODE
+      - name: Upload release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release upload "$RELEASE_TAG" saf-cli-tester.tgz --clobber
