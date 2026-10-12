@@ -124,23 +124,15 @@ The executable name is:
 saf-cli-tester
 ```
 
-Development execution may initially use:
+User-facing examples assume a globally installed CLI. See [installation](installation.md) for stable releases.
+
+For local development, run from the repository checkout; this builds and runs the current source:
 
 ```text
 npm run dev -- ...
 ```
 
-The package should eventually expose a proper executable so that it can be linked locally with:
-
-```text
-npm link
-```
-
-and then called globally as:
-
-```text
-saf-cli-tester ...
-```
+The globally installed `saf-cli-tester ...` runs the installed release even inside the project directory.
 
 ---
 

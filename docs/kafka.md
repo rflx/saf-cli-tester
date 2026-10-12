@@ -4,8 +4,8 @@ Transport diagnostics targeting **EcoHub SAF Message Broker System 1.2.0**:
 <https://github.myecohub.ch/SAF-Message-Broker/1.2.0/>. The specification site was unavailable during implementation; the supplied 1.2.0 requirements are the implementation baseline.
 
 ```sh
-npm run dev -- kafka connection-test --profile <profile-name>
-npm run dev -- kafka consume --profile <profile-name> \
+saf-cli-tester kafka connection-test --profile <profile-name>
+saf-cli-tester kafka consume --profile <profile-name> \
   --topic eh.saf.<ecohubId>.commission.out.v1 \
   --group-id CG-123456-IDP123456 --count 10
 ```
@@ -31,9 +31,9 @@ Schema Registry is not required or called. The specification lists IAT `https://
 ## Viewing consumed payloads
 
 ```sh
-npm run dev -- kafka consume --profile <profile-name> \
+saf-cli-tester kafka consume --profile <profile-name> \
   --topic <topic> --group-id <group-id> --duration 1m --include-payload
-npm run dev -- kafka consume --profile <profile-name> \
+saf-cli-tester kafka consume --profile <profile-name> \
   --topic <topic> --group-id <group-id> --count 5 --include-payload
 ```
 
@@ -48,7 +48,7 @@ For backward compatibility this flag controls both console display and bounded J
 A consumer group identifies cooperating consumers that share topic partitions. Committed offsets belong to the group: reusing its ID preserves its offset history. Creating another group starts a separate offset history and is not a neutral troubleshooting step. The CLI never changes your supplied group ID automatically, resets offsets, or deletes groups.
 
 ```sh
-npm run dev -- kafka group-describe \
+saf-cli-tester kafka group-describe \
   --profile <profile-name> --group-id <group-id>
 ```
 

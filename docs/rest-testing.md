@@ -5,8 +5,8 @@
 Add `--show-response` to print the HTTP response body after each request's normal metadata. Valid JSON (including arrays and nested objects) uses two-space indentation; non-JSON is plain text; an empty body displays `Response: <empty>`. A timestamp and request number separate iterations. Polling remains sequential, with no overlap.
 
 ```sh
-npm run dev -- rest poll --profile <profile-name> --path /some/path --interval 60 --count 5 --show-response
-npm run dev -- run --profile <profile-name> --request templates/general-api/saf-receivers.yaml --show-response
+saf-cli-tester rest poll --profile <profile-name> --path /some/path --interval 60 --count 5 --show-response
+saf-cli-tester run --profile <profile-name> --request templates/general-api/saf-receivers.yaml --show-response
 ```
 
 Bodies are displayed for 2xx, 3xx, 4xx and 5xx HTTP responses. Redirects are not followed. Existing status classification, expected-status checks and exit codes remain unchanged; an empty body is not an error. Network/authentication failures without an HTTP resource response have no body to show.
@@ -38,27 +38,27 @@ Polling stays sequential and creates a separate HTTP/2 session per request. Sess
 Use a configured local profile and replace the path placeholders for your environment. Compare response status/body and the actual reported version:
 
 ```sh
-npm run dev -- rest request \
+saf-cli-tester rest request \
   --profile <profile-name> --method GET \
   --path /saf/v1/<ecohub-id>/commission/out \
   --http-version 1.1 --show-response
 
-npm run dev -- rest request \
+saf-cli-tester rest request \
   --profile <profile-name> --method GET \
   --path /saf/v1/<ecohub-id>/commission/out \
   --http-version 2 --show-response
 
-npm run dev -- rest poll \
+saf-cli-tester rest poll \
   --profile <profile-name> \
   --path /saf/v1/<ecohub-id>/commission/out \
   --interval 60 --duration 30m --http-version 1.1
 
-npm run dev -- rest poll \
+saf-cli-tester rest poll \
   --profile <profile-name> \
   --path /saf/v1/<ecohub-id>/commission/out \
   --interval 60 --duration 30m --http-version 2
 
-npm run dev -- run \
+saf-cli-tester run \
   --profile <profile-name> \
   --request templates/general-api/saf-receivers.yaml \
   --http-version 2 --show-response

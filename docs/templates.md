@@ -39,11 +39,11 @@ Resolution visits nested body objects, arrays, string values and permitted heade
 
 `credentials.shared` is optional and requires a complete direct `licenceKey`/`password` pair or a complete `licenceKeyEnv`/`passwordEnv` pair. Empty, partial or mixed pairs fail validation. These are request data, never transport authentication, and are never automatically attached to REST requests or Kafka configuration.
 
-Use [saf-receivers](../templates/general-api/saf-receivers.yaml) or [saf-insurers](../templates/general-api/saf-insurers.yaml):
+Use [saf-receivers](../templates/general-api/saf-receivers.yaml) or [saf-insurers](../templates/general-api/saf-insurers.yaml). The paths below work from any directory with the installed CLI: when the relative local file does not exist, the CLI uses the bundled template. Local files take precedence:
 
 ```sh
-npm run dev -- run --profile <profile-name> --request templates/general-api/saf-receivers.yaml
-npm run dev -- run --profile <profile-name> --request templates/general-api/saf-insurers.yaml
+saf-cli-tester run --profile <profile-name> --request templates/general-api/saf-receivers.yaml
+saf-cli-tester run --profile <profile-name> --request templates/general-api/saf-insurers.yaml
 ```
 
 Both use top-level licenceKey/password body fields, generated requestId/requestTime and userAgent. They work with REST OAuth2 or mTLS and omit onBehalfOf. To poll, add an explicit interval and count/duration; PROD writes require `--allow-prod-write`.
@@ -55,7 +55,7 @@ Both shared fields and resolved environment values are registered as secrets, in
 General API response bodies are often the primary result. Opt in to redacted console output:
 
 ```sh
-npm run dev -- run \
+saf-cli-tester run \
   --profile <profile-name> \
   --request templates/general-api/saf-receivers.yaml \
   --show-response

@@ -17,16 +17,6 @@ SAF CLI Tester is a local diagnostic CLI for testing EcoHub SAF REST and Native 
 
 ## Installation
 
-### Development
-
-```sh
-npm ci
-npm run build
-npm run dev -- --help
-```
-
-### Stable releases and development main
-
 Requires Node.js >=20.15.1 and npm.
 
 Latest stable:
@@ -60,13 +50,15 @@ saf-cli-tester update
 
 ## Quick Start
 
-Requires **Node.js >=20.15.1** and npm. From the repository root:
+After installing the stable CLI:
 
 ```sh
-npm ci
-npm run build
-npm run dev -- --help
+saf-cli-tester --help
+```
 
+Create a local profile from [the full profile example](examples/profile.full.example.yaml). The copy command below assumes a repository checkout and runs from its root; no dependency installation or build is needed to copy the file. Alternatively, save the linked example directly to the destination.
+
+```sh
 mkdir -p ~/.config/saf-cli-tester/profiles
 cp examples/profile.full.example.yaml \
   ~/.config/saf-cli-tester/profiles/example-profile.yaml
@@ -76,8 +68,8 @@ chmod 600 ~/.config/saf-cli-tester/profiles/example-profile.yaml
 Edit the copied file **outside Git**. Keep `name: example-profile` aligned with its filename, choose the TechUser's `IAT` or `PROD` environment, and replace placeholder endpoints and credentials. Configure REST, Kafka, or both; remove unused transports and credential blocks. The full example includes shared credentials and a certificate reference, so remove those if unused or supply their real local values before validation. Neither environment nor transport is required as a preferred choice.
 
 ```sh
-npm run dev -- profiles validate example-profile
-npm run dev -- profiles show example-profile
+saf-cli-tester profiles validate example-profile
+saf-cli-tester profiles show example-profile
 ```
 
 Validation is local: it checks configured credentials, environment variables and certificate usability without authenticating or contacting services. `show` prints a sanitized profile.
@@ -86,13 +78,13 @@ Choose a first network check for the transport you configured:
 
 ```sh
 # REST: replace /some/path with an actual resource path.
-npm run dev -- rest request --profile example-profile --method GET --path /some/path
+saf-cli-tester rest request --profile example-profile --method GET --path /some/path
 
 # Native Kafka: test authenticated broker metadata access.
-npm run dev -- kafka connection-test --profile example-profile
+saf-cli-tester kafka connection-test --profile example-profile
 ```
 
-All angle-bracket values and generic resource paths below are placeholders; replace them before running commands. Examples use `npm run dev --`, which builds before execution. After building, `node dist/cli/index.js` accepts the same arguments; `npm link` also makes `saf-cli-tester` available.
+All angle-bracket values and generic resource paths below are placeholders; replace them before running commands. Examples in the main user documentation assume a globally installed CLI. See [Development](#development) to run the current source checkout.
 
 ## How configuration is organized
 
@@ -114,9 +106,9 @@ All angle-bracket values and generic resource paths below are placeholders; repl
 `config paths` also reports an optional `secrets/` path. **The CLI does not automatically load `.env` files.** Export environment-backed credentials through your shell or secret manager.
 
 ```sh
-npm run dev -- config paths
-npm run dev -- config show
-npm run dev -- --config-dir ~/saf-local config paths
+saf-cli-tester config paths
+saf-cli-tester config show
+saf-cli-tester --config-dir ~/saf-local config paths
 ```
 
 Missing `config.yaml` uses defaults: REST timeout 30000 ms, error-body diagnostic limit 65536 bytes and polling interval 60 seconds. Invalid existing configuration fails; unknown fields are rejected. Reading configuration does not create directories.
@@ -183,8 +175,8 @@ Place global configuration options before the subcommand.
 `config`, `config paths` and `config show` have no command-specific options beyond `-h, --help`.
 
 ```sh
-npm run dev -- config paths
-npm run dev -- config show
+saf-cli-tester config paths
+saf-cli-tester config show
 ```
 
 ### profiles
@@ -192,9 +184,9 @@ npm run dev -- config show
 `profiles`, `profiles list`, `profiles show <name>` and `profiles validate <name>` have no command-specific options beyond `-h, --help`. `show` and `validate` require the positional profile name.
 
 ```sh
-npm run dev -- profiles list
-npm run dev -- profiles show <profile-name>
-npm run dev -- profiles validate <profile-name>
+saf-cli-tester profiles list
+saf-cli-tester profiles show <profile-name>
+saf-cli-tester profiles validate <profile-name>
 ```
 
 ### rest request
@@ -306,20 +298,20 @@ The default method is GET. Paths resolve from the profile's HTTPS origin, not be
 
 ```sh
 # Simple GET
-npm run dev -- rest request \
+saf-cli-tester rest request \
   --profile <profile-name> --method GET --path /some/path
 
 # Show response
-npm run dev -- rest request \
+saf-cli-tester rest request \
   --profile <profile-name> --method GET --path /some/path --show-response
 
 # HTTPS HTTP/2
-npm run dev -- rest request \
+saf-cli-tester rest request \
   --profile <profile-name> --method GET --path /some/path \
   --http-version 2 --show-response
 
 # POST with non-sensitive example JSON
-npm run dev -- rest request \
+saf-cli-tester rest request \
   --profile <profile-name> --method POST --path /some/path \
   --header 'Content-Type: application/json' --body '{"example":"value"}'
 ```
@@ -334,17 +326,17 @@ Choose one effective bound: `--count` or `--duration`. If both CLI flags are sup
 
 ```sh
 # Count
-npm run dev -- rest poll \
+saf-cli-tester rest poll \
   --profile <profile-name> --path /some/path --interval 60 --count 10
 
 # Duration
-npm run dev -- rest poll \
+saf-cli-tester rest poll \
   --profile <profile-name> --path /some/path --interval 60 --duration 30m
 
 # Compare protocols with the same polling settings
-npm run dev -- rest poll \
+saf-cli-tester rest poll \
   --profile <profile-name> --path /some/path --interval 60 --count 5 --http-version 1.1
-npm run dev -- rest poll \
+saf-cli-tester rest poll \
   --profile <profile-name> --path /some/path --interval 60 --count 5 --http-version 2
 ```
 
@@ -355,14 +347,14 @@ npm run dev -- rest poll \
 `run` executes a YAML request template. A `poll` block enables polling; omit it for a single request. CLI settings override supported template values, an explicit CLI body source replaces the template body source, and CLI count/duration replaces the template bound.
 
 ```sh
-npm run dev -- run \
+saf-cli-tester run \
   --profile <profile-name> --request templates/general-api/saf-receivers.yaml --show-response
-npm run dev -- run \
+saf-cli-tester run \
   --profile <profile-name> --request templates/general-api/saf-receivers.yaml \
   --http-version 2 --show-response
 ```
 
-These General API templates use POST: PROD profiles require `--allow-prod-write`. Relative template `bodyFile` paths resolve beside the template; CLI body-file paths resolve from the working directory. See [request schema and overrides](docs/requests.md) and [runtime placeholders](docs/templates.md).
+The two General API paths above work from any directory: if the relative local file does not exist, the CLI uses its bundled template. Local files take precedence. These General API templates use POST: PROD profiles require `--allow-prod-write`. Relative template `bodyFile` paths resolve beside the template; CLI body-file paths resolve from the working directory. See [request schema and overrides](docs/requests.md) and [runtime placeholders](docs/templates.md).
 
 ### Viewing responses
 
@@ -391,9 +383,9 @@ The actual response HTTP version is displayed and logged as `httpVersion` when a
 | `both` | Both files | CSV and summary. |
 
 ```sh
-npm run dev -- rest poll \
+saf-cli-tester rest poll \
   --profile <profile-name> --path /some/path --interval 60 --count 10 --export both
-npm run dev -- rest request \
+saf-cli-tester rest request \
   --profile <profile-name> --path /some/path --export csv --output ~/saf-results/request.csv
 ```
 
@@ -408,7 +400,7 @@ Native Kafka uses the Kafka protocol over TechUser mTLS, not HTTP. HTTP version 
 ### Connection test
 
 ```sh
-npm run dev -- kafka connection-test --profile <profile-name>
+saf-cli-tester kafka connection-test --profile <profile-name>
 ```
 
 Connects an admin client, requests broker metadata and disconnects without consuming. Success does not prove topic or group ACL access. A UUID client ID is generated per run unless supplied through `--client-id`.
@@ -416,7 +408,7 @@ Connects an admin client, requests broker metadata and disconnects without consu
 ### Consume
 
 ```sh
-npm run dev -- kafka consume \
+saf-cli-tester kafka consume \
   --profile <profile-name> --topic <topic> --group-id <group-id> --duration 1m
 ```
 
@@ -429,7 +421,7 @@ The CLI requires a non-empty group ID and sends it unchanged; the SAF naming con
 ### Consumer groups
 
 ```sh
-npm run dev -- kafka group-describe \
+saf-cli-tester kafka group-describe \
   --profile <profile-name> --group-id <group-id>
 ```
 
@@ -438,7 +430,7 @@ Read-only inspection reports state, protocol, active member count and safe membe
 ### Viewing payloads
 
 ```sh
-npm run dev -- kafka consume \
+saf-cli-tester kafka consume \
   --profile <profile-name> --topic <topic> --group-id <group-id> \
   --duration 1m --include-payload
 ```
@@ -476,7 +468,7 @@ Repeated UUID/time references within one request share their values; each poll i
 Keep user-specific YAML requests and customer payloads outside Git, under `~/.config/saf-cli-tester/requests/`. Copy/adapt the request reference and consult [the request schema](docs/requests.md).
 
 ```sh
-npm run dev -- run \
+saf-cli-tester run \
   --profile <profile-name> \
   --request ~/.config/saf-cli-tester/requests/custom-request.yaml
 ```
@@ -502,7 +494,7 @@ The profile fixes the environment and each run displays it. **POST / PUT / PATCH
 For an intentional, authorized write using a profile configured with `environment: PROD`:
 
 ```sh
-npm run dev -- rest request \
+saf-cli-tester rest request \
   --profile <prod-profile-name> --method POST --path /some/path \
   --body-file ~/saf-test-data/request.json --header 'Content-Type: application/json' \
   --allow-prod-write
@@ -556,13 +548,25 @@ See [REST troubleshooting](docs/rest-testing.md#protocol-troubleshooting), [Kafk
 
 ## Development
 
-Requires Node.js >=20.15.1 and npm.
+Requires Node.js >=20.15.1 and npm. Run these commands from the repository checkout.
 
 ```sh
 npm ci
 npm run check
 npm test
 npm run build
+
+npm run dev -- --help
+npm run dev -- profiles list
+npm run dev -- rest request --profile <profile-name> --path /some/path
+```
+
+`npm run dev -- ...` builds and runs the current local source. The globally installed `saf-cli-tester ...` runs the installed release even when your shell is inside the project directory. To distinguish the installed command from the local development version:
+
+```sh
+which saf-cli-tester
+saf-cli-tester --version
+npm run dev -- --version
 ```
 
 No native build dependencies are required. `check` runs strict TypeScript checks; no lint configuration is present. Tests use dummy credentials, mocks and local servers; HTTP transport tests generate temporary certificates with OpenSSL. Real SAF tests must be initiated manually.
