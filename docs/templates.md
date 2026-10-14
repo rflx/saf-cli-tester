@@ -1,6 +1,6 @@
 # Request templates
 
-Repository and local files have distinct purposes:
+Bundled and local files have distinct purposes:
 
 - `examples/`: reference configuration examples to copy or adapt; normally `*.example.yaml`.
 - `templates/`: versioned, ready-to-run request templates using runtime placeholders, grouped by API/domain.
@@ -17,7 +17,7 @@ Real local configuration belongs under:
 └── logs/           # Runtime JSONL logs
 ```
 
-The CLI also reports an optional `secrets/` path; it does not automatically load `.env` files. Repository templates supply requests; the selected local profile supplies endpoints and credentials. Never commit real credentials, certificates, customer payloads or logs.
+The CLI also reports an optional `secrets/` path; it does not automatically load `.env` files. Bundled templates supply requests; the selected local profile supplies endpoints and credentials. Never commit real credentials, certificates, customer payloads or logs.
 
 
 Templates are reusable request descriptions, independent of TechUser identity and REST authentication mode. See [request syntax](requests.md) for schema, CLI overrides, body files and polling bounds.
@@ -39,12 +39,17 @@ Resolution visits nested body objects, arrays, string values and permitted heade
 
 `credentials.shared` is optional and requires a complete direct `licenceKey`/`password` pair or a complete `licenceKeyEnv`/`passwordEnv` pair. Empty, partial or mixed pairs fail validation. These are request data, never transport authentication, and are never automatically attached to REST requests or Kafka configuration.
 
-Use [saf-receivers](../templates/general-api/saf-receivers.yaml) or [saf-insurers](../templates/general-api/saf-insurers.yaml). The paths below work from any directory with the installed CLI: when the relative local file does not exist, the CLI uses the bundled template. Local files take precedence:
+Use [saf-receivers](../templates/general-api/saf-receivers.yaml) or [saf-insurers](../templates/general-api/saf-insurers.yaml). Initialize local copies from any directory:
 
 ```sh
-saf-cli-tester run --profile <profile-name> --request templates/general-api/saf-receivers.yaml
-saf-cli-tester run --profile <profile-name> --request templates/general-api/saf-insurers.yaml
+saf-cli-tester requests templates
+saf-cli-tester requests init saf-receivers --template general-api/saf-receivers
+saf-cli-tester requests init saf-insurers --template general-api/saf-insurers
+saf-cli-tester run --profile <profile-name> --request ~/.config/saf-cli-tester/requests/saf-receivers.yaml
+saf-cli-tester run --profile <profile-name> --request ~/.config/saf-cli-tester/requests/saf-insurers.yaml
 ```
+
+Init copies content exactly and never overwrites. Existing `--request templates/...` bundled fallback remains supported; local files take precedence.
 
 Both use top-level licenceKey/password body fields, generated requestId/requestTime and userAgent. They work with REST OAuth2 or mTLS and omit onBehalfOf. To poll, add an explicit interval and count/duration; PROD writes require `--allow-prod-write`.
 
@@ -57,7 +62,7 @@ General API response bodies are often the primary result. Opt in to redacted con
 ```sh
 saf-cli-tester run \
   --profile <profile-name> \
-  --request templates/general-api/saf-receivers.yaml \
+  --request ~/.config/saf-cli-tester/requests/saf-receivers.yaml \
   --show-response
 ```
 

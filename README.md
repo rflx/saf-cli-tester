@@ -46,7 +46,7 @@ saf-cli-tester update-check
 saf-cli-tester update
 ```
 
-`update-check` compares the installed package version with the latest published stable GitHub Release without modifying anything. `update` installs that release’s `saf-cli-tester.tgz` asset from its exact tagged URL when a newer version is available. `update` runs directly without a confirmation prompt. Local SAF configuration, profiles, certificates, requests and logs are untouched. Normal commands never contact GitHub for updates. Development checkouts can use `npm run dev -- update-check`; self-update requires a global npm installation. See [installation and releases](docs/installation.md).
+`update-check` compares the installed package version with the latest published stable GitHub Release without modifying anything. `update` installs that release’s `saf-cli-tester.tgz` asset from its exact tagged URL when a newer version is available. `update` runs directly without a confirmation prompt. Local SAF configuration, profiles, certificates, requests and logs are untouched. Normal commands never contact GitHub for updates. Self-update requires a global npm installation. See [installation and releases](docs/installation.md).
 
 ## Quick Start
 
@@ -56,14 +56,15 @@ After installing the stable CLI:
 saf-cli-tester --help
 ```
 
-Create a local profile from [the full profile example](examples/profile.full.example.yaml). The copy command below assumes a repository checkout and runs from its root; no dependency installation or build is needed to copy the file. Alternatively, save the linked example directly to the destination.
+Create a local profile from bundled placeholders, without a repository checkout:
 
 ```sh
-mkdir -p ~/.config/saf-cli-tester/profiles
-cp examples/profile.full.example.yaml \
-  ~/.config/saf-cli-tester/profiles/example-profile.yaml
-chmod 600 ~/.config/saf-cli-tester/profiles/example-profile.yaml
+saf-cli-tester profiles examples
+saf-cli-tester profiles init example-profile --example full
+$EDITOR ~/.config/saf-cli-tester/profiles/example-profile.yaml
 ```
+
+Available examples include `full`, `oauth2` and `mtls`. Init sets the YAML name and never overwrites existing files.
 
 Edit the copied file **outside Git**. Keep `name: example-profile` aligned with its filename, choose the TechUser's `IAT` or `PROD` environment, and replace placeholder endpoints and credentials. Configure REST, Kafka, or both; remove unused transports and credential blocks. The full example includes shared credentials and a certificate reference, so remove those if unused or supply their real local values before validation. Neither environment nor transport is required as a preferred choice.
 
@@ -90,8 +91,8 @@ All angle-bracket values and generic resource paths below are placeholders; repl
 
 | Location | Purpose |
 | --- | --- |
-| Repository `examples/` | Configuration and request-schema references to copy or adapt; no real secrets. |
-| Repository `templates/` | Versioned, ready-to-run request templates; the local profile supplies endpoints and credentials. |
+| Bundled `examples/` | Configuration and request-schema references to copy or adapt; no real secrets. |
+| Bundled `templates/` | Versioned, ready-to-run request templates; the local profile supplies endpoints and credentials. |
 | Local `~/.config/saf-cli-tester/` | Real profiles, certificates, custom requests and diagnostic files, outside Git. |
 
 ```text
@@ -111,7 +112,13 @@ saf-cli-tester config show
 saf-cli-tester --config-dir ~/saf-local config paths
 ```
 
-Missing `config.yaml` uses defaults: REST timeout 30000 ms, error-body diagnostic limit 65536 bytes and polling interval 60 seconds. Invalid existing configuration fails; unknown fields are rejected. Reading configuration does not create directories.
+Missing `config.yaml` uses defaults: REST timeout 30000 ms, error-body diagnostic limit 65536 bytes and polling interval 60 seconds. Invalid existing configuration fails; unknown fields are rejected. Reading configuration does not create directories. Creation is explicit:
+
+```sh
+saf-cli-tester config init
+```
+
+`config.yaml` is optional; deleting it restores default-only behavior. Every init command creates the root and `profiles/`, `requests/`, and `certificates/` with mode 0700, and files with mode 0600 where supported. Manually copy your own TechUser P12/PFX into `certificates/`; init never generates, copies or downloads certificates. Logs are created only when a diagnostic run requires them.
 
 Request settings resolve in this order: CLI, template, profile, application settings/defaults. Headers merge case-insensitively. HTTP protocol selection is a CLI option, not a profile or template setting. See [configuration](docs/configuration.md) for the full schema and precedence rules.
 
@@ -139,6 +146,12 @@ Verify trusted OAuth discovery/token endpoints before supplying credentials; dis
 
 | Command | Purpose |
 | --- | --- |
+| `config init` | Create optional configuration with current defaults. |
+| `profiles init <name> --example <name>` | Create a local placeholder profile. |
+| `profiles examples` | List bundled profile examples. |
+| `requests init <name>` | Copy a bundled example or executable template. |
+| `requests examples` | List bundled request examples. |
+| `requests templates` | List bundled executable templates. |
 | `config paths` | Show local filesystem paths. |
 | `config show` | Show effective application configuration. |
 | `profiles list` | List local profiles and transport authentication modes. |
@@ -154,7 +167,7 @@ Verify trusted OAuth discovery/token endpoints before supplying credentials; dis
 | `update-check` | Check the latest published GitHub Release. |
 | `update` | Install the latest published GitHub Release globally. |
 
-The command groups are `config`, `profiles`, `rest` and `kafka`. Every command accepts `-h, --help`. Tables below list every command option; defaults described as “resolved settings” come from configuration precedence, rather than a Commander flag default. `—` means no default value.
+The command groups are `config`, `profiles`, `requests`, `rest` and `kafka`. Every command accepts `-h, --help`. Tables below list every command option; defaults described as “resolved settings” come from configuration precedence, rather than a Commander flag default. `—` means no default value.
 
 ### Global options
 
@@ -172,7 +185,7 @@ Place global configuration options before the subcommand.
 
 ### config
 
-`config`, `config paths` and `config show` have no command-specific options beyond `-h, --help`.
+`config`, `config init`, `config paths` and `config show` have no command-specific options beyond `-h, --help`.
 
 ```sh
 saf-cli-tester config paths
@@ -187,6 +200,20 @@ saf-cli-tester config show
 saf-cli-tester profiles list
 saf-cli-tester profiles show <profile-name>
 saf-cli-tester profiles validate <profile-name>
+```
+
+`profiles examples` lists bundled sources. `profiles init <name> --example <name>` requires an example and creates a private local profile.
+
+### requests
+
+`requests init <name>` requires exactly one of `--example <name>` or `--template <category/name>`. Existing destinations are rejected. Request names follow the profile naming rules.
+
+```sh
+saf-cli-tester requests examples
+saf-cli-tester requests templates
+saf-cli-tester requests init my-request --example request
+saf-cli-tester requests init saf-receivers \
+  --template general-api/saf-receivers
 ```
 
 ### rest request
@@ -348,13 +375,13 @@ saf-cli-tester rest poll \
 
 ```sh
 saf-cli-tester run \
-  --profile <profile-name> --request templates/general-api/saf-receivers.yaml --show-response
+  --profile <profile-name> --request ~/.config/saf-cli-tester/requests/saf-receivers.yaml --show-response
 saf-cli-tester run \
-  --profile <profile-name> --request templates/general-api/saf-receivers.yaml \
+  --profile <profile-name> --request ~/.config/saf-cli-tester/requests/saf-receivers.yaml \
   --http-version 2 --show-response
 ```
 
-The two General API paths above work from any directory: if the relative local file does not exist, the CLI uses its bundled template. Local files take precedence. These General API templates use POST: PROD profiles require `--allow-prod-write`. Relative template `bodyFile` paths resolve beside the template; CLI body-file paths resolve from the working directory. See [request schema and overrides](docs/requests.md) and [runtime placeholders](docs/templates.md).
+Initialize the local copy using `requests init` above, then execute it from any directory. The existing `templates/...` bundled fallback remains supported, with local files taking precedence. These General API templates use POST: PROD profiles require `--allow-prod-write`. Relative template `bodyFile` paths resolve beside the template; CLI body-file paths resolve from the working directory. See [request schema and overrides](docs/requests.md) and [runtime placeholders](docs/templates.md).
 
 ### Viewing responses
 
@@ -465,7 +492,7 @@ Repeated UUID/time references within one request share their values; each poll i
 
 ## Local custom requests
 
-Keep user-specific YAML requests and customer payloads outside Git, under `~/.config/saf-cli-tester/requests/`. Copy/adapt the request reference and consult [the request schema](docs/requests.md).
+Keep user-specific YAML requests and customer payloads outside Git, under `~/.config/saf-cli-tester/requests/`. Use `saf-cli-tester requests init custom-request --example request`, edit the local copy, and consult [the request schema](docs/requests.md).
 
 ```sh
 saf-cli-tester run \
@@ -534,6 +561,7 @@ See [REST troubleshooting](docs/rest-testing.md#protocol-troubleshooting), [Kafk
 
 | Document | Purpose |
 | --- | --- |
+| [Development](docs/development.md) | Resource conventions and adding bundled examples/templates. |
 | [Architecture](docs/architecture.md) | Architecture specification and future direction. |
 | [Installation and releases](docs/installation.md) | Global installation, updates and maintainer release workflow. |
 | [Release guide](docs/releasing.md) | Step-by-step stable GitHub Release procedure. |

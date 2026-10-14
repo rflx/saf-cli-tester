@@ -94,4 +94,18 @@ Profile/Auth v2 already supports Kafka; no new profile fields or consumer defaul
 
 Optional `credentials.shared` stores secret `licenceKey` and `password` values, or the complete `licenceKeyEnv`/`passwordEnv` pair. Partial, empty or mixed pairs are invalid. They are separate from REST OAuth2/mTLS and Kafka mTLS authentication and are never sent automatically. Only explicit `{{profile:credentials.shared.licenceKey}}` and `{{profile:credentials.shared.password}}` references can access profile data. Missing values fail before network access with `CONFIG_ERROR`. Both secrets and encoded forms are centrally redacted, including echoed diagnostics; request payloads are not logged. See [templates](templates.md) for execution timing, polling and generic General API examples.
 
-The examples are schema references with fake values; copy them to `~/.config/saf-cli-tester/profiles/<name>.yaml` and adapt them. The filename must match `name`. IAT is illustrative, not a default. The full example includes shared request credentials and both transports. To switch REST to mTLS, change only `rest.auth.mode` and `rest.auth.credential` to `mtls`. Consumer topic, group ID and bounds are CLI flags, not profile fields.
+The examples are schema references with fake values; initialize them with `saf-cli-tester profiles init <name> --example full` and adapt the local copy. The filename must match `name`. IAT is illustrative, not a default. The full example includes shared request credentials and both transports. To switch REST to mTLS, change only `rest.auth.mode` and `rest.auth.credential` to `mtls`. Consumer topic, group ID and bounds are CLI flags, not profile fields.
+
+## Initialize a profile
+
+```sh
+saf-cli-tester profiles examples
+saf-cli-tester profiles init example-profile --example full
+saf-cli-tester profiles init example-oauth --example oauth2
+saf-cli-tester profiles init example-mtls --example mtls
+$EDITOR ~/.config/saf-cli-tester/profiles/example-profile.yaml
+saf-cli-tester profiles validate example-profile
+saf-cli-tester profiles show example-profile
+```
+
+Sources come from the installed package independently of the working directory. Init replaces only the YAML name and never overwrites. It does not validate credentials or connectivity or contact services. Edit placeholders and manually copy your P12/PFX into the created `certificates/` before validation.

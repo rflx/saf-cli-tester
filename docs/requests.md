@@ -28,3 +28,16 @@ Every environment placeholder value is registered with central redaction, includ
 ## Shared request credentials and profile placeholders
 
 Optional `credentials.shared` stores secret `licenceKey` and `password` values, or the complete `licenceKeyEnv`/`passwordEnv` pair. Partial, empty or mixed pairs are invalid. They are separate from REST OAuth2/mTLS and Kafka mTLS authentication and are never sent automatically. Only explicit `{{profile:credentials.shared.licenceKey}}` and `{{profile:credentials.shared.password}}` references can access profile data. Missing values fail before network access with `CONFIG_ERROR`. Both secrets and encoded forms are centrally redacted, including echoed diagnostics; request payloads are not logged. See [templates](templates.md) for execution timing, polling and generic General API examples.
+
+## Initialize local requests
+
+```sh
+saf-cli-tester requests examples
+saf-cli-tester requests templates
+saf-cli-tester requests init my-request --example request
+saf-cli-tester requests init saf-receivers --template general-api/saf-receivers
+$EDITOR ~/.config/saf-cli-tester/requests/my-request.yaml
+saf-cli-tester run --profile <profile-name> --request ~/.config/saf-cli-tester/requests/my-request.yaml
+```
+
+Exactly one of `--example` or `--template` is required. Both copy bundled content unchanged into local `requests/<name>.yaml` with mode 0600 where supported. Existing files are rejected. Init is offline; edit references before executing them. No checkout is needed.

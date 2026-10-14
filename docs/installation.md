@@ -10,7 +10,20 @@ saf-cli-tester --version
 saf-cli-tester --help
 ```
 
-For a specific stable version use `npm install -g https://github.com/rflx/saf-cli-tester/releases/download/v0.1.0/saf-cli-tester.tgz`. `npm install -g github:rflx/saf-cli-tester` installs development/main. The `prepare` lifecycle builds TypeScript during Git installation; no checked-in build or native build dependencies are needed. The package deliberately ships built modules and bundled templates. From any directory, `saf-cli-tester run --request templates/general-api/saf-receivers.yaml` (or `saf-insurers.yaml`) falls back to the bundled template when that relative local file does not exist. Local files retain precedence.
+For a specific stable version use `npm install -g https://github.com/rflx/saf-cli-tester/releases/download/v0.1.0/saf-cli-tester.tgz`. `npm install -g github:rflx/saf-cli-tester` installs development/main. The `prepare` lifecycle builds TypeScript during Git installation; no checked-in build or native build dependencies are needed. The package deliberately ships built modules, bundled examples and executable templates. From any directory, `saf-cli-tester run --request templates/general-api/saf-receivers.yaml` (or `saf-insurers.yaml`) falls back to the bundled template when that relative local file does not exist. Local files retain precedence.
+
+First-time setup requires no checkout:
+
+```sh
+saf-cli-tester profiles examples
+saf-cli-tester profiles init example-profile --example full
+$EDITOR ~/.config/saf-cli-tester/profiles/example-profile.yaml
+saf-cli-tester requests templates
+saf-cli-tester requests init saf-receivers --template general-api/saf-receivers
+saf-cli-tester config init
+```
+
+`config.yaml` is optional; missing configuration uses defaults, and deletion restores default-only behavior. Init creates `certificates/` for manually copied P12/PFX, without generating or downloading certificates. Existing destinations are rejected.
 
 User-facing command examples assume this globally installed CLI. See [Quick Start](../README.md#quick-start) for profile setup and first checks.
 

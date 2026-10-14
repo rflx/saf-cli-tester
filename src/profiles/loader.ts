@@ -3,9 +3,10 @@ import { readdir } from 'node:fs/promises';
 import { readYaml } from '../config/loader.js';
 import type { Redactor } from '../logging/redactor.js';
 import { profileSchema } from './types.js';
+import { validateLocalName } from '../resources.js';
 
 export async function loadProfile(directory: string, name: string, redactor?: Redactor) {
-  if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(name)) throw new Error('CONFIG_ERROR: Invalid profile name');
+  validateLocalName(name, 'profile');
   try {
     const raw = await readYaml(join(directory, `${name}.yaml`));
     redactor?.register(raw);

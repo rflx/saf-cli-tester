@@ -5,7 +5,10 @@
   "private": true,
   "files": [
     "dist/",
-    "templates/"
+    "templates/",
+    "examples/",
+    "README.md",
+    "package.json"
   ],
   "repository": "github:rflx/saf-cli-tester",
   "bin": {

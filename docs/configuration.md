@@ -1,6 +1,6 @@
 # Configuration
 
-Repository and local files have distinct purposes:
+Bundled and local files have distinct purposes:
 
 - `examples/`: reference configuration examples to copy or adapt; normally `*.example.yaml`.
 - `templates/`: versioned, ready-to-run request templates using runtime placeholders, grouped by API/domain.
@@ -17,7 +17,7 @@ Real local configuration belongs under:
 └── logs/           # Runtime JSONL logs
 ```
 
-The CLI also reports an optional `secrets/` path; it does not automatically load `.env` files. Repository templates supply requests; the selected local profile supplies endpoints and credentials. Never commit real credentials, certificates, customer payloads or logs.
+The CLI also reports an optional `secrets/` path; it does not automatically load `.env` files. Bundled templates supply requests; the selected local profile supplies endpoints and credentials. Never commit real credentials, certificates, customer payloads or logs.
 
 
 The default root is `~/.config/saf-cli-tester/`, expanded using the current user's home directory. `--config-dir` overrides it. `config paths` reports `config.yaml`, `profiles/`, `secrets/`, `certificates/`, `requests/` and `logs/`. `config show` reports sanitized application defaults. Reading config does not create directories.
@@ -50,3 +50,13 @@ Kafka uses existing Profile/Auth v2 brokers and mTLS credentials. Consume requir
 ## Shared request credentials and profile placeholders
 
 Optional `credentials.shared` stores secret `licenceKey` and `password` values, or the complete `licenceKeyEnv`/`passwordEnv` pair. Partial, empty or mixed pairs are invalid. They are separate from REST OAuth2/mTLS and Kafka mTLS authentication and are never sent automatically. Only explicit `{{profile:credentials.shared.licenceKey}}` and `{{profile:credentials.shared.password}}` references can access profile data. Missing values fail before network access with `CONFIG_ERROR`. Both secrets and encoded forms are centrally redacted, including echoed diagnostics; request payloads are not logged. See [templates](templates.md) for execution timing, polling and generic General API examples.
+
+## Explicit initialization
+
+```sh
+saf-cli-tester config init
+```
+
+This explicitly creates optional `config.yaml` from current schema defaults, including empty REST headers. Missing configuration uses defaults; deleting it restores default-only behavior. Read-only commands never create it. Existing files are rejected.
+
+Every init command creates the root, `profiles/`, `requests/` and `certificates/` with mode 0700 and files with mode 0600 where supported. Existing directory permissions are unchanged. Logs are not eagerly created. Copy your own P12/PFX manually into `certificates/`; init never generates, copies or downloads certificates.

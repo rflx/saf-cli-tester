@@ -1,6 +1,6 @@
 # Security
 
-Repository and local files have distinct purposes:
+Bundled and local files have distinct purposes:
 
 - `examples/`: reference configuration examples to copy or adapt; normally `*.example.yaml`.
 - `templates/`: versioned, ready-to-run request templates using runtime placeholders, grouped by API/domain.
@@ -17,7 +17,7 @@ Real local configuration belongs under:
 └── logs/           # Runtime JSONL logs
 ```
 
-The CLI also reports an optional `secrets/` path; it does not automatically load `.env` files. Repository templates supply requests; the selected local profile supplies endpoints and credentials. Never commit real credentials, certificates, customer payloads or logs.
+The CLI also reports an optional `secrets/` path; it does not automatically load `.env` files. Bundled templates supply requests; the selected local profile supplies endpoints and credentials. Never commit real credentials, certificates, customer payloads or logs.
 
 
 Optional CSV and summary JSON exports use central redaction and an explicit request-field allowlist. They exclude headers, tokens, request payloads and certificate material. Exports are local diagnostics and must never be committed. Default export paths are rejected inside Git repositories, including symlinked locations; explicit `--output` can target a user-selected path. New export files use exclusive creation and mode 0600. `.gitignore` excludes `*.csv` and `*.summary.json`; arbitrary custom output names still require care when staging files.
@@ -46,3 +46,7 @@ Native Kafka uses TechUser X.509 mTLS only. The P12/PFX and password remain in m
 ## Shared request credentials and profile placeholders
 
 Optional `credentials.shared` stores secret `licenceKey` and `password` values, or the complete `licenceKeyEnv`/`passwordEnv` pair. Partial, empty or mixed pairs are invalid. They are separate from REST OAuth2/mTLS and Kafka mTLS authentication and are never sent automatically. Only explicit `{{profile:credentials.shared.licenceKey}}` and `{{profile:credentials.shared.password}}` references can access profile data. Missing values fail before network access with `CONFIG_ERROR`. Both secrets and encoded forms are centrally redacted, including echoed diagnostics; request payloads are not logged. See [templates](templates.md) for execution timing, polling and generic General API examples.
+
+## Initialization safety
+
+Init is explicit and offline, copies bundled placeholders, rejects traversal and unknown resource names, and never overwrites files, including destination symlinks. New directories use 0700 and files 0600 where supported; existing directory modes are unchanged. All init flows create `certificates/` for manually supplied TechUser P12/PFX, without generating or copying certificates. Discovery and configuration reads do not create files. Redaction and PROD protections are unchanged.

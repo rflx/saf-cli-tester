@@ -6,7 +6,8 @@ Add `--show-response` to print the HTTP response body after each request's norma
 
 ```sh
 saf-cli-tester rest poll --profile <profile-name> --path /some/path --interval 60 --count 5 --show-response
-saf-cli-tester run --profile <profile-name> --request templates/general-api/saf-receivers.yaml --show-response
+saf-cli-tester requests init saf-receivers --template general-api/saf-receivers
+saf-cli-tester run --profile <profile-name> --request ~/.config/saf-cli-tester/requests/saf-receivers.yaml --show-response
 ```
 
 Bodies are displayed for 2xx, 3xx, 4xx and 5xx HTTP responses. Redirects are not followed. Existing status classification, expected-status checks and exit codes remain unchanged; an empty body is not an error. Network/authentication failures without an HTTP resource response have no body to show.
@@ -60,7 +61,7 @@ saf-cli-tester rest poll \
 
 saf-cli-tester run \
   --profile <profile-name> \
-  --request templates/general-api/saf-receivers.yaml \
+  --request ~/.config/saf-cli-tester/requests/saf-receivers.yaml \
   --http-version 2 --show-response
 ```
 
