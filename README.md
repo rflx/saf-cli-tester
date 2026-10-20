@@ -8,7 +8,7 @@ SAF CLI Tester is a local diagnostic CLI for testing EcoHub SAF REST and Native 
 - Single REST requests, bounded sequential polling, and HTTP/1.1 or HTTPS HTTP/2.
 - YAML request templates with runtime placeholders and expected-status checks.
 - Optional REST response display with `--show-response`.
-- Native Kafka mTLS connection tests, bounded consumption and consumer group diagnostics.
+- Native Kafka mTLS connection tests, topic metadata inspection/polling, bounded consumption, and consumer-group diagnostics.
 - Optional Kafka payload display and bounded JSON logging with `--include-payload`.
 - Redacted JSONL diagnostics, CSV/JSON summary exports and transport statistics.
 - Explicit PROD write protection.
@@ -75,14 +75,24 @@ saf-cli-tester profiles show example-profile
 
 Validation is local: it checks configured credentials, environment variables and certificate usability without authenticating or contacting services. `show` prints a sanitized profile.
 
-Choose a first network check for the transport you configured:
+Only the transport you use needs to be configured in your profile. Choose its first network check:
+
+### REST
+
+Replace `/some/path` with an actual resource path.
 
 ```sh
-# REST: replace /some/path with an actual resource path.
-saf-cli-tester rest request --profile example-profile --method GET --path /some/path
+saf-cli-tester rest request \
+  --profile example-profile \
+  --method GET \
+  --path /some/path
+```
 
-# Native Kafka: test authenticated broker metadata access.
-saf-cli-tester kafka connection-test --profile example-profile
+### Native Kafka
+
+```sh
+saf-cli-tester kafka connection-test \
+  --profile example-profile
 ```
 
 All angle-bracket values and generic resource paths below are placeholders; replace them before running commands. Examples in the main user documentation assume a globally installed CLI. See [Development](#development) to run the current source checkout.
@@ -144,6 +154,20 @@ Verify trusted OAuth discovery/token endpoints before supplying credentials; dis
 
 ## CLI command reference
 
+The command groups are `config`, `profiles`, `requests`, `rest` and `kafka`. Every command accepts `-h, --help`. Tables below list every command option; defaults described as “resolved settings” come from configuration precedence, rather than a Commander flag default. `—` means no default value.
+
+### Global options
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--config-dir <directory>` | `~/.config/saf-cli-tester` | Local configuration root for all commands. |
+| `-V, --version` | — | Print the CLI version. |
+| `-h, --help` | — | Display help. |
+
+Place global configuration options before the subcommand.
+
+### Setup and utility commands
+
 | Command | Purpose |
 | --- | --- |
 | `config init` | Create optional configuration with current defaults. |
@@ -157,67 +181,37 @@ Verify trusted OAuth discovery/token endpoints before supplying credentials; dis
 | `profiles list` | List local profiles and transport authentication modes. |
 | `profiles show <name>` | Show a sanitized profile. |
 | `profiles validate <name>` | Validate configuration and credentials locally. |
-| `rest request` | Execute one REST request. |
-| `rest poll` | Execute bounded sequential REST polling. |
-| `run` | Execute a YAML request template, including its polling configuration. |
-| `kafka connection-test` | Test authenticated Native Kafka metadata connectivity. |
-| `kafka consume` | Consume bounded Kafka messages. |
-| `kafka topic-describe` | Read-only topic metadata inspection. |
-| `kafka group-describe` | Inspect an existing consumer group. |
 | `help [command]` | Display help; command groups also expose this helper. |
 | `update-check` | Check the latest published GitHub Release. |
 | `update` | Install the latest published GitHub Release globally. |
 
-The command groups are `config`, `profiles`, `requests`, `rest` and `kafka`. Every command accepts `-h, --help`. Tables below list every command option; defaults described as “resolved settings” come from configuration precedence, rather than a Commander flag default. `—` means no default value.
-
-### Global options
-
-| Flag | Default | Description |
-| --- | --- | --- |
-| `--config-dir <directory>` | `~/.config/saf-cli-tester` | Local configuration root for all commands. |
-| `-V, --version` | — | Print the CLI version. |
-| `-h, --help` | — | Display help. |
-
-Place global configuration options before the subcommand.
-
-### update-check and update
+#### update-check and update
 
 `update-check` and `update` have no command-specific options beyond `-h, --help`.
 
-### config
+#### config
 
 `config`, `config init`, `config paths` and `config show` have no command-specific options beyond `-h, --help`.
 
-```sh
-saf-cli-tester config paths
-saf-cli-tester config show
-```
-
-### profiles
+#### profiles
 
 `profiles`, `profiles list`, `profiles show <name>` and `profiles validate <name>` have no command-specific options beyond `-h, --help`. `show` and `validate` require the positional profile name.
 
-```sh
-saf-cli-tester profiles list
-saf-cli-tester profiles show <profile-name>
-saf-cli-tester profiles validate <profile-name>
-```
-
 `profiles examples` lists bundled sources. `profiles init <name> --example <name>` requires an example and creates a private local profile.
 
-### requests
+#### requests
 
 `requests init <name>` requires exactly one of `--example <name>` or `--template <category/name>`. Existing destinations are rejected. Request names follow the profile naming rules.
 
-```sh
-saf-cli-tester requests examples
-saf-cli-tester requests templates
-saf-cli-tester requests init my-request --example request
-saf-cli-tester requests init saf-receivers \
-  --template general-api/saf-receivers
-```
+### REST commands
 
-### rest request
+| Command | Purpose |
+| --- | --- |
+| `rest request` | Execute one REST request. |
+| `rest poll` | Execute bounded sequential REST polling. |
+| `run` | Execute a YAML request template, including its polling configuration. |
+
+#### rest request
 
 | Flag | Default / requirement | Description |
 | --- | --- | --- |
@@ -235,7 +229,7 @@ saf-cli-tester requests init saf-receivers \
 | `--output <path>` | Local logs directory | Exact file for a single export format; directory for `both`. Requires `--export`. |
 | `-h, --help` | — | Display command help. |
 
-### rest poll
+#### rest poll
 
 | Flag | Default / requirement | Description |
 | --- | --- | --- |
@@ -256,7 +250,7 @@ saf-cli-tester requests init saf-receivers \
 | `--duration <duration>` | — | Positive duration with `ms`, `s`, `m` or `h`, e.g. `30m`. |
 | `-h, --help` | — | Display command help. |
 
-### run
+#### run
 
 CLI values override supported template settings. A template with `poll` runs polling; otherwise `run` executes one request, even if polling flags are supplied.
 
@@ -280,7 +274,16 @@ CLI values override supported template settings. A template with `poll` runs pol
 | `--request <file>` | Required | YAML request template path. |
 | `-h, --help` | — | Display command help. |
 
-### kafka connection-test
+### Native Kafka commands
+
+| Command | Purpose |
+| --- | --- |
+| `kafka connection-test` | Test authenticated Native Kafka metadata connectivity. |
+| `kafka topic-describe` | Read-only topic metadata inspection. |
+| `kafka group-describe` | Inspect an existing consumer group. |
+| `kafka consume` | Consume bounded Kafka messages. |
+
+#### kafka connection-test
 
 | Flag | Default / requirement | Description |
 | --- | --- | --- |
@@ -290,7 +293,35 @@ CLI values override supported template settings. A template with `poll` runs pol
 | `--output <path>` | Local logs directory | Exact file for a single format; directory for `both`. Requires `--export`. |
 | `-h, --help` | — | Display command help. |
 
-### kafka consume
+#### kafka topic-describe
+
+Inspect topic metadata once or with bounded read-only polling.
+
+| Flag | Default / requirement | Description |
+| --- | --- | --- |
+| `--profile <name>` | Required | Local TechUser profile with Kafka mTLS configured. |
+| `--topic <topic>` | Required | Kafka topic to inspect. |
+| `--client-id <uuid>` | Generated UUID | Explicit Kafka UUID client ID. |
+| `--interval <seconds>` | Required for polling | Positive interval between sample starts; at most 2147483.647 seconds. |
+| `--count <n>` | Optional | Enable bounded polling for a positive safe integer number of attempts; excludes duration. |
+| `--duration <duration>` | Optional | Enable bounded polling for positive ms/s/m/h duration, at most 24.8 days; excludes count. |
+| `--changes-only` | Disabled | Polling only: suppress unchanged successful console samples. |
+| `--export <format>` | Disabled | `csv`, `summary` or `both`; successful inspection adds no message CSV rows. |
+| `--output <path>` | Local logs directory | Exact file for a single format; directory for `both`. Requires `--export`. |
+| `-h, --help` | — | Display command help. |
+
+#### kafka group-describe
+
+| Flag | Default / requirement | Description |
+| --- | --- | --- |
+| `--profile <name>` | Required | Local TechUser profile with Kafka mTLS configured. |
+| `--client-id <uuid>` | Generated UUID | Explicit Kafka UUID client ID. |
+| `--export <format>` | Disabled | `csv`, `summary` or `both`. |
+| `--output <path>` | Local logs directory | Exact file for a single format; directory for `both`. Requires `--export`. |
+| `--group-id <id>` | Required | Non-empty ID of an existing consumer group. |
+| `-h, --help` | — | Display command help. |
+
+#### kafka consume
 
 | Flag | Default / requirement | Description |
 | --- | --- | --- |
@@ -307,7 +338,204 @@ CLI values override supported template settings. A template with `poll` runs pol
 | `--max-payload-bytes <n>` | 65536 | Persistent payload diagnostic limit, 1–1048576 bytes; does not limit console output. |
 | `-h, --help` | — | Display command help. |
 
-### kafka topic-describe
+## REST
+
+### Single requests
+
+The default method is GET. Paths resolve from the profile's HTTPS origin, not beneath a base URL path, and must remain on that origin. Redirects are not followed.
+
+```sh
+# Simple GET
+saf-cli-tester rest request \
+  --profile <profile-name> \
+  --method GET \
+  --path /some/path
+
+# Show response
+saf-cli-tester rest request \
+  --profile <profile-name> \
+  --method GET \
+  --path /some/path \
+  --show-response
+
+# HTTPS HTTP/2
+saf-cli-tester rest request \
+  --profile <profile-name> \
+  --method GET \
+  --path /some/path \
+  --http-version 2 \
+  --show-response
+
+# POST with non-sensitive example JSON
+saf-cli-tester rest request \
+  --profile <profile-name> \
+  --method POST \
+  --path /some/path \
+  --header 'Content-Type: application/json' \
+  --body '{"example":"value"}'
+```
+
+Choose `--body` or `--body-file`, never both; GET/HEAD cannot have a body. Use external body files for sensitive data. `--header` is repeatable; Authorization, Proxy-Authorization, Cookie, Host, Content-Length, Transfer-Encoding and Connection are reserved. Authentication headers are managed by the tool.
+
+The positive integer `--timeout` applies to each HTTP exchange, including discovery/token exchanges individually. Only 2xx responses succeed. Template `expect.status` can narrow accepted 2xx statuses; listing non-2xx statuses does not make them successful.
+
+### Polling
+
+Choose one effective bound: `--count` or `--duration`. If both CLI flags are supplied, duration takes precedence; use only one to make intent clear. Durations accept positive values with `ms`, `s`, `m` or `h`, including fractional values.
+
+```sh
+# Count
+saf-cli-tester rest poll \
+  --profile <profile-name> \
+  --path /some/path \
+  --interval 60 \
+  --count 10
+
+# Duration
+saf-cli-tester rest poll \
+  --profile <profile-name> \
+  --path /some/path \
+  --interval 60 \
+  --duration 30m
+
+# Compare protocols with the same polling settings
+saf-cli-tester rest poll \
+  --profile <profile-name> \
+  --path /some/path \
+  --interval 60 \
+  --count 5 \
+  --http-version 1.1
+saf-cli-tester rest poll \
+  --profile <profile-name> \
+  --path /some/path \
+  --interval 60 \
+  --count 5 \
+  --http-version 2
+```
+
+`--interval` controls seconds between request starts. Execution is sequential with no overlap or catch-up bursts; slow requests extend the interval. GET/HEAD/OPTIONS use the configured interval when omitted. POST/PUT/PATCH/DELETE polling requires an explicit interval (from CLI or template), plus PROD authorization when applicable. Ctrl+C or SIGTERM aborts active work and prints final statistics.
+
+### Request templates
+
+List sources and initialize a local request:
+
+```sh
+saf-cli-tester requests examples
+saf-cli-tester requests templates
+saf-cli-tester requests init my-request \
+  --example request
+saf-cli-tester requests init saf-receivers \
+  --template general-api/saf-receivers
+```
+
+`run` executes a YAML request template. A `poll` block enables polling; omit it for a single request. CLI settings override supported template values, an explicit CLI body source replaces the template body source, and CLI count/duration replaces the template bound.
+
+```sh
+saf-cli-tester run \
+  --profile <profile-name> \
+  --request ~/.config/saf-cli-tester/requests/saf-receivers.yaml \
+  --show-response
+saf-cli-tester run \
+  --profile <profile-name> \
+  --request ~/.config/saf-cli-tester/requests/saf-receivers.yaml \
+  --http-version 2 \
+  --show-response
+```
+
+Initialize the local copy using `requests init`, then execute it from any directory. The existing `templates/...` bundled fallback remains supported, with local files taking precedence. These General API templates use POST: PROD profiles require `--allow-prod-write`. Relative template `bodyFile` paths resolve beside the template; CLI body-file paths resolve from the working directory. See [request schema and overrides](docs/requests.md) and [runtime placeholders](docs/templates.md).
+
+### Viewing responses
+
+Without `--show-response`, REST prints compact metadata and summary statistics. With it, the HTTP response body appears in the terminal: JSON is pretty-printed, plain text is supported, and empty/unavailable bodies are identified. Central secret redaction applies.
+
+This flag controls **console output only**; it does not add successful bodies to JSONL or exports. Bounded 4xx/5xx diagnostics are recorded independently. Console response capture is limited to 1 MiB. See [REST output details](docs/rest-testing.md).
+
+### HTTP/1.1 and HTTP/2
+
+| Value | Behavior |
+| --- | --- |
+| `--http-version auto` | Default; preserves the existing HTTP/1.1 transport behavior. |
+| `--http-version 1.1` | Selects the HTTP/1.1 transport explicitly. |
+| `--http-version 2` | Forces HTTPS HTTP/2; TLS ALPN must negotiate `h2`. No silent HTTP/1.1 fallback or cleartext HTTP/2. |
+
+The actual response HTTP version is displayed and logged as `httpVersion` when a response is received. Both OAuth2 and mTLS work with either transport; the option applies to the API request, while OAuth discovery/token acquisition retains its default transport. Protocol selection is supported by `rest request`, `rest poll` and `run`. See [REST transport details and troubleshooting](docs/rest-testing.md).
+
+### REST exports
+
+`rest request`, `rest poll` and `run` support exports.
+
+| Format | Default file under `<config-dir>/logs/` | Contents |
+| --- | --- | --- |
+| `csv` | `<runId>.csv` | Allowlisted per-request REST metadata and error records. |
+| `summary` | `<runId>.summary.json` | Run metadata and aggregate transport statistics. |
+| `both` | Both files | CSV and summary. |
+
+```sh
+saf-cli-tester rest poll \
+  --profile <profile-name> \
+  --path /some/path \
+  --interval 60 \
+  --count 10 \
+  --export both
+saf-cli-tester rest request \
+  --profile <profile-name> \
+  --path /some/path \
+  --export csv \
+  --output ~/saf-results/request.csv
+```
+
+`--output` requires `--export`: it is an exact filename for one format or a directory for `both`. Parent directories are created; existing files are never overwritten. Default exports inside Git repositories (including symlinked locations) are rejected. Explicit output paths are user-selected; keep them outside Git.
+
+Exports use central redaction and exclude payloads, headers, query values, response bodies and certificate material. See [diagnostic/export schemas](docs/diagnostics.md).
+
+### Included templates
+
+| Tracked template | Purpose |
+| --- | --- |
+| [saf-receivers.yaml](templates/general-api/saf-receivers.yaml) | POST `/general/v3/saf-receivers`. |
+| [saf-insurers.yaml](templates/general-api/saf-insurers.yaml) | POST `/general/v3/saf-insurers`. |
+
+These General API templates are REST requests. Both templates require shared profile credentials and work with REST OAuth2 or mTLS. They supply request ID/time and user agent; no `onBehalfOf` is added. Executable General API templates live in `templates/`, not `examples/`.
+
+Supported placeholders in request bodies and permitted header values:
+
+| Placeholder | Value |
+| --- | --- |
+| `{{uuid}}` | New UUID for each request. |
+| `{{toolVersion}}` | Installed CLI version from package metadata; nonsecret, no profile required. |
+| `{{nowUtc}}` | Current UTC timestamp for each request. |
+| `{{env:VARIABLE_NAME}}` | Nonempty exported environment variable. |
+| `{{profile:credentials.shared.licenceKey}}` | Shared profile licence key. |
+| `{{profile:credentials.shared.password}}` | Shared profile password. |
+
+Repeated UUID/time references within one request share their values; each poll iteration receives fresh values. Profile access is allowlisted to those two shared fields. Unknown/malformed placeholders or missing values fail before authentication/network access. No expressions or arbitrary property traversal are supported. See [templates](docs/templates.md).
+
+`examples/` contains [the full profile](examples/profile.full.example.yaml), [OAuth2](examples/profile.oauth2.example.yaml), [mTLS](examples/profile.mtls.example.yaml) and [request schema](examples/request.example.yaml) references.
+
+### Local custom requests
+
+Keep user-specific YAML requests and customer payloads outside Git, under `~/.config/saf-cli-tester/requests/`. Use `saf-cli-tester requests init custom-request --example request`, edit the local copy, and consult [the request schema](docs/requests.md).
+
+```sh
+saf-cli-tester run \
+  --profile <profile-name> \
+  --request ~/.config/saf-cli-tester/requests/custom-request.yaml
+```
+
+## Native Kafka
+
+Native Kafka uses the Kafka protocol over TechUser mTLS, not HTTP. HTTP version settings do not apply; OAuth2/SASL broker authentication is unsupported. The profile supplies brokers, credentials and environment. Admin diagnostics are read-only; consumption joins a group and advances its offsets. See [Native Kafka details](docs/kafka.md).
+
+### Connection test
+
+```sh
+saf-cli-tester kafka connection-test \
+  --profile <profile-name>
+```
+
+Opens a short-lived admin connection, requests broker/cluster metadata and disconnects. Success proves basic authenticated Kafka metadata access. Success does not prove topic or group ACL access. A UUID client ID is generated per run unless supplied through `--client-id`.
+
+### Topic metadata
 
 ```sh
 saf-cli-tester kafka topic-describe \
@@ -315,7 +543,11 @@ saf-cli-tester kafka topic-describe \
   --topic <topic>
 ```
 
-Bounded polling (choose count or duration):
+Returns partition count, leader broker IDs, replicas and in-sync replicas (ISR). Conceptually, Apache Kafka `AdminClient.describeTopics(...)` ≈ KafkaJS `admin.fetchTopicMetadata(...)`; this does not imply identical implementation semantics. Inspection is read-only: no consumer group, no offset changes and no messages consumed.
+
+### Topic metadata polling
+
+Choose count, duration, or duration with changes-only output:
 
 ```sh
 saf-cli-tester kafka topic-describe \
@@ -338,179 +570,43 @@ saf-cli-tester kafka topic-describe \
   --changes-only
 ```
 
-Without polling options the command runs once. Polling requires an explicit positive
-`--interval` in seconds and exactly one of `--count` (positive safe integer) or
-`--duration` (positive `ms`, `s`, `m`, or `h`, at most 24.8 days). Interval is capped
-at 2147483.647 seconds. Interval alone and changes-only without polling are rejected.
-The interval is between sample starts: execution is sequential with no overlap,
-slow samples extend the effective interval, and there are no catch-up bursts.
-Each sample uses a fresh admin connect/fetch/disconnect operation. Duration prevents
-new samples after the deadline; an in-flight operation finishes and disconnects.
-Ctrl+C or SIGTERM stops further samples and writes the final summary (exit 130 on
-interruption without errors; any failed attempt keeps exit 1).
+Each sample performs a fresh connect/fetch/disconnect cycle. Samples run sequentially without overlap; interval is measured between sample starts, and slow operations extend it. Polling requires an explicit interval and exactly one bound: count or duration. `--changes-only` prints the first successful sample, later metadata changes and failures. Use polling to observe leader, replica, ISR and partition changes. See [polling details](docs/kafka.md#topic-metadata-inspection) for comparison rules, interruption behavior and JSONL semantics.
 
-Every poll is read-only: no consumer group is created or joined, no offsets are
-changed, and no messages are consumed. Samples can reveal leader changes, replica
-set changes, ISR changes, and partition count changes over time.
-`--changes-only` prints the first success and subsequent changed metadata, while
-always printing failures. Comparison ignores timestamps and run IDs, sorts partitions
-by ID and ISR membership, and includes partition error codes. Replica order is retained
-because it identifies the preferred replica. Failures do not reset the last success.
-All attempts remain in JSONL with timestamps, sample numbers, safe metadata or
-classified/redacted errors. Summary JSON includes attempted/successful/failed counts,
-duration, metadata change count (excluding the initial sample), topic and the latest
-successful snapshot. CSV stays header-only for successes and adds diagnostic rows
-for failures. Polling console output labels each visible sample and prints final totals.
-
-
-Read-only topic metadata inspection retrieves partition count, leader broker, replica broker IDs and ISR broker IDs. Conceptually, Apache Kafka `AdminClient.describeTopics(...)` ≈ KafkaJS `admin.fetchTopicMetadata(...)`; their implementation semantics are not identical. This command never joins a group, changes offsets or consumes messages.
-
-| Flag | Default / requirement | Description |
-| --- | --- | --- |
-| `--profile <name>` | Required | Local TechUser profile with Kafka mTLS configured. |
-| `--topic <topic>` | Required | Kafka topic to inspect. |
-| `--client-id <uuid>` | Generated UUID | Explicit Kafka UUID client ID. |
-| `--interval <seconds>` | Required for polling | Positive interval between sample starts; at most 2147483.647 seconds. |
-| `--count <n>` | Optional | Enable bounded polling for a positive safe integer number of attempts; excludes duration. |
-| `--duration <duration>` | Optional | Enable bounded polling for positive ms/s/m/h duration, at most 24.8 days; excludes count. |
-| `--changes-only` | Disabled | Polling only: suppress unchanged successful console samples. |
-| `--export <format>` | Disabled | `csv`, `summary` or `both`; successful inspection adds no message CSV rows. |
-| `--output <path>` | Local logs directory | Exact file for a single format; directory for `both`. Requires `--export`. |
-| `-h, --help` | — | Display command help. |
-
-Safe topic metadata is included in JSONL and summary exports. CSV follows existing admin diagnostics: header only on success, diagnostic error rows on failure.
-
-### kafka group-describe
-
-| Flag | Default / requirement | Description |
-| --- | --- | --- |
-| `--profile <name>` | Required | Local TechUser profile with Kafka mTLS configured. |
-| `--client-id <uuid>` | Generated UUID | Explicit Kafka UUID client ID. |
-| `--export <format>` | Disabled | `csv`, `summary` or `both`. |
-| `--output <path>` | Local logs directory | Exact file for a single format; directory for `both`. Requires `--export`. |
-| `--group-id <id>` | Required | Non-empty ID of an existing consumer group. |
-| `-h, --help` | — | Display command help. |
-
-## REST
-
-### Single requests
-
-The default method is GET. Paths resolve from the profile's HTTPS origin, not beneath a base URL path, and must remain on that origin. Redirects are not followed.
+### Consumer group inspection
 
 ```sh
-# Simple GET
-saf-cli-tester rest request \
-  --profile <profile-name> --method GET --path /some/path
-
-# Show response
-saf-cli-tester rest request \
-  --profile <profile-name> --method GET --path /some/path --show-response
-
-# HTTPS HTTP/2
-saf-cli-tester rest request \
-  --profile <profile-name> --method GET --path /some/path \
-  --http-version 2 --show-response
-
-# POST with non-sensitive example JSON
-saf-cli-tester rest request \
-  --profile <profile-name> --method POST --path /some/path \
-  --header 'Content-Type: application/json' --body '{"example":"value"}'
+saf-cli-tester kafka group-describe \
+  --profile <profile-name> \
+  --group-id <group-id>
 ```
 
-Choose `--body` or `--body-file`, never both; GET/HEAD cannot have a body. Use external body files for sensitive data. `--header` is repeatable; Authorization, Proxy-Authorization, Cookie, Host, Content-Length, Transfer-Encoding and Connection are reserved. Authentication headers are managed by the tool.
+Read-only inspection reports state, protocol, active member count and safe member metadata. It does not create a group, join it or change offsets. Use it to investigate protocol mismatches and rebalances before changing consumer configuration. See [assignor details](docs/kafka.md#consumer-group-diagnostics) for supported assignment protocols. An inactive `Empty` group is valid; a missing or `Dead` group reports `KAFKA_GROUP_NOT_FOUND`.
 
-The positive integer `--timeout` applies to each HTTP exchange, including discovery/token exchanges individually. Only 2xx responses succeed. Template `expect.status` can narrow accepted 2xx statuses; listing non-2xx statuses does not make them successful.
-
-### Polling
-
-Choose one effective bound: `--count` or `--duration`. If both CLI flags are supplied, duration takes precedence; use only one to make intent clear. Durations accept positive values with `ms`, `s`, `m` or `h`, including fractional values.
-
-```sh
-# Count
-saf-cli-tester rest poll \
-  --profile <profile-name> --path /some/path --interval 60 --count 10
-
-# Duration
-saf-cli-tester rest poll \
-  --profile <profile-name> --path /some/path --interval 60 --duration 30m
-
-# Compare protocols with the same polling settings
-saf-cli-tester rest poll \
-  --profile <profile-name> --path /some/path --interval 60 --count 5 --http-version 1.1
-saf-cli-tester rest poll \
-  --profile <profile-name> --path /some/path --interval 60 --count 5 --http-version 2
-```
-
-`--interval` controls seconds between request starts. Execution is sequential with no overlap or catch-up bursts; slow requests extend the interval. GET/HEAD/OPTIONS use the configured interval when omitted. POST/PUT/PATCH/DELETE polling requires an explicit interval (from CLI or template), plus PROD authorization when applicable. Ctrl+C or SIGTERM aborts active work and prints final statistics.
-
-### Request templates
-
-`run` executes a YAML request template. A `poll` block enables polling; omit it for a single request. CLI settings override supported template values, an explicit CLI body source replaces the template body source, and CLI count/duration replaces the template bound.
-
-```sh
-saf-cli-tester run \
-  --profile <profile-name> --request ~/.config/saf-cli-tester/requests/saf-receivers.yaml --show-response
-saf-cli-tester run \
-  --profile <profile-name> --request ~/.config/saf-cli-tester/requests/saf-receivers.yaml \
-  --http-version 2 --show-response
-```
-
-Initialize the local copy using `requests init` above, then execute it from any directory. The existing `templates/...` bundled fallback remains supported, with local files taking precedence. These General API templates use POST: PROD profiles require `--allow-prod-write`. Relative template `bodyFile` paths resolve beside the template; CLI body-file paths resolve from the working directory. See [request schema and overrides](docs/requests.md) and [runtime placeholders](docs/templates.md).
-
-### Viewing responses
-
-Without `--show-response`, REST prints compact metadata and summary statistics. With it, the HTTP response body appears in the terminal: JSON is pretty-printed, plain text is supported, and empty/unavailable bodies are identified. Central secret redaction applies.
-
-This flag controls **console output only**; it does not add successful bodies to JSONL or exports. Bounded 4xx/5xx diagnostics are recorded independently. Console response capture is limited to 1 MiB. See [REST output details](docs/rest-testing.md).
-
-### HTTP/1.1 and HTTP/2
-
-| Value | Behavior |
-| --- | --- |
-| `--http-version auto` | Default; preserves the existing HTTP/1.1 transport behavior. |
-| `--http-version 1.1` | Selects the HTTP/1.1 transport explicitly. |
-| `--http-version 2` | Forces HTTPS HTTP/2; TLS ALPN must negotiate `h2`. No silent HTTP/1.1 fallback or cleartext HTTP/2. |
-
-The actual response HTTP version is displayed and logged as `httpVersion` when a response is received. Both OAuth2 and mTLS work with either transport; the option applies to the API request, while OAuth discovery/token acquisition retains its default transport. Protocol selection is supported by `rest request`, `rest poll` and `run`. See [REST transport details and troubleshooting](docs/rest-testing.md).
-
-### Exports
-
-`rest request`, `rest poll` and `run` support exports. All three Kafka commands also expose the same export options with Kafka statistics and metadata.
-
-| Format | Default file under `<config-dir>/logs/` | Contents |
-| --- | --- | --- |
-| `csv` | `<runId>.csv` | Allowlisted per-request REST or per-message Kafka metadata and error records. |
-| `summary` | `<runId>.summary.json` | Run metadata and aggregate transport statistics. |
-| `both` | Both files | CSV and summary. |
-
-```sh
-saf-cli-tester rest poll \
-  --profile <profile-name> --path /some/path --interval 60 --count 10 --export both
-saf-cli-tester rest request \
-  --profile <profile-name> --path /some/path --export csv --output ~/saf-results/request.csv
-```
-
-`--output` requires `--export`: it is an exact filename for one format or a directory for `both`. Parent directories are created; existing files are never overwritten. Default exports inside Git repositories (including symlinked locations) are rejected. Explicit output paths are user-selected; keep them outside Git.
-
-Exports use central redaction and exclude payloads, headers, query values, response bodies and certificate material. Kafka admin operations produce summaries but no per-message success rows; group details are in console/JSONL. See [diagnostic/export schemas](docs/diagnostics.md).
-
-## Native Kafka
-
-Native Kafka uses the Kafka protocol over TechUser mTLS, not HTTP. HTTP version settings do not apply; OAuth2/SASL broker authentication is unsupported. The profile supplies brokers, credentials and environment. See [Native Kafka details](docs/kafka.md).
-
-### Connection test
-
-```sh
-saf-cli-tester kafka connection-test --profile <profile-name>
-```
-
-Connects an admin client, requests broker metadata and disconnects without consuming. Success does not prove topic or group ACL access. A UUID client ID is generated per run unless supplied through `--client-id`.
-
-### Consume
+### Consume messages
 
 ```sh
 saf-cli-tester kafka consume \
-  --profile <profile-name> --topic <topic> --group-id <group-id> --duration 1m
+  --profile <profile-name> \
+  --topic <topic> \
+  --group-id <group-id> \
+  --duration 1m
+```
+
+```sh
+# Count
+saf-cli-tester kafka consume \
+  --profile <profile-name> \
+  --topic <topic> \
+  --group-id <group-id> \
+  --count 10
+
+# Earliest available records for a new/uncommitted group
+saf-cli-tester kafka consume \
+  --profile <profile-name> \
+  --topic <topic> \
+  --group-id <group-id> \
+  --duration 1m \
+  --from-beginning
 ```
 
 At least one bound is required: count or duration. Both may be supplied; the first reached stops consumption. A count-only run can wait indefinitely if too few records arrive. Duration starts before connection, and cleanup can extend the elapsed run time.
@@ -519,60 +615,40 @@ Existing groups resume committed offsets. New/uncommitted groups start at latest
 
 The CLI requires a non-empty group ID and sends it unchanged; the SAF naming convention is not enforced or warned on. Kafka producing, SAF payload crypto and business validation are not implemented.
 
-### Consumer groups
-
-```sh
-saf-cli-tester kafka group-describe \
-  --profile <profile-name> --group-id <group-id>
-```
-
-Read-only inspection reports state, protocol, active member count and safe member metadata. It does not create a group, join it or change offsets. Use it to investigate protocol mismatches and rebalances before changing consumer configuration. This client advertises `RoundRobinAssigner`; there is no assignor-selection flag. An inactive `Empty` group is valid; a missing or `Dead` group reports `KAFKA_GROUP_NOT_FOUND`.
-
 ### Viewing payloads
 
 ```sh
 saf-cli-tester kafka consume \
-  --profile <profile-name> --topic <topic> --group-id <group-id> \
-  --duration 1m --include-payload
+  --profile <profile-name> \
+  --topic <topic> \
+  --group-id <group-id> \
+  --duration 1m \
+  --include-payload
 ```
 
 Payloads are hidden by default. `--include-payload` prints redacted JSON/text values and also enables bounded JSON object/array payload inclusion in local JSONL. Binary data is represented by metadata. Keys and arbitrary headers remain omitted, and CSV/summary exports remain payload-free.
 
 `--max-payload-bytes` limits persistent diagnostics only, not terminal output. Business data may remain sensitive after redaction; protect both displayed and stored data. See [payload formatting and limits](docs/kafka.md#viewing-consumed-payloads).
 
-## Included templates
+### Kafka exports
 
-| Tracked template | Purpose |
-| --- | --- |
-| [saf-receivers.yaml](templates/general-api/saf-receivers.yaml) | POST `/general/v3/saf-receivers`. |
-| [saf-insurers.yaml](templates/general-api/saf-insurers.yaml) | POST `/general/v3/saf-insurers`. |
-
-Both templates require shared profile credentials and work with REST OAuth2 or mTLS. They supply request ID/time and user agent; no `onBehalfOf` is added. Executable General API templates live in `templates/`, not `examples/`.
-
-Supported placeholders in request bodies and permitted header values:
-
-| Placeholder | Value |
-| --- | --- |
-| `{{uuid}}` | New UUID for each request. |
-| `{{toolVersion}}` | Installed CLI version from package metadata; nonsecret, no profile required. |
-| `{{nowUtc}}` | Current UTC timestamp for each request. |
-| `{{env:VARIABLE_NAME}}` | Nonempty exported environment variable. |
-| `{{profile:credentials.shared.licenceKey}}` | Shared profile licence key. |
-| `{{profile:credentials.shared.password}}` | Shared profile password. |
-
-Repeated UUID/time references within one request share their values; each poll iteration receives fresh values. Profile access is allowlisted to those two shared fields. Unknown/malformed placeholders or missing values fail before authentication/network access. No expressions or arbitrary property traversal are supported. See [templates](docs/templates.md).
-
-`examples/` contains [the full profile](examples/profile.full.example.yaml), [OAuth2](examples/profile.oauth2.example.yaml), [mTLS](examples/profile.mtls.example.yaml) and [request schema](examples/request.example.yaml) references.
-
-## Local custom requests
-
-Keep user-specific YAML requests and customer payloads outside Git, under `~/.config/saf-cli-tester/requests/`. Use `saf-cli-tester requests init custom-request --example request`, edit the local copy, and consult [the request schema](docs/requests.md).
+Kafka commands that expose export options support `csv`, `summary`, or `both`.
 
 ```sh
-saf-cli-tester run \
+saf-cli-tester kafka topic-describe \
   --profile <profile-name> \
-  --request ~/.config/saf-cli-tester/requests/custom-request.yaml
+  --topic <topic> \
+  --export summary
+
+saf-cli-tester kafka consume \
+  --profile <profile-name> \
+  --topic <topic> \
+  --group-id <group-id> \
+  --duration 1m \
+  --export both
 ```
+
+Admin operations do not create per-message success rows; consume may produce message metadata rows. Summaries contain aggregate diagnostics and safe metadata. Exports remain payload-free and centrally redacted. `--output` selects a file for one format or a directory for `both`; the same path and overwrite protections as [REST exports](#rest-exports) apply. See [export schemas](docs/diagnostics.md).
 
 ## Diagnostics and logs
 
@@ -625,7 +701,8 @@ Ignore rules do not protect already tracked files or arbitrary payload names. Re
 | HTTP/2 negotiation failure | Verify endpoint/proxy ALPN `h2` support; compare explicit `1.1`. There is no automatic fallback. |
 | `TLS_ERROR` / Kafka TLS failure | Check trust chain, hostname, certificate validity and client P12/password; verification is never bypassed. |
 | Kafka connection failure | Check profile brokers, network reachability, mTLS and broker authorization; metadata success does not prove topic/group access. |
-| `KAFKA_GROUP_PROTOCOL_ERROR` | Use `kafka group-describe` to inspect existing member protocols; this client supports `RoundRobinAssigner`. |
+| Kafka unknown/unauthorized topic | Verify the topic name and topic metadata ACLs; use `kafka connection-test` first to distinguish basic connectivity from topic authorization. |
+| `KAFKA_GROUP_PROTOCOL_ERROR` | Use `kafka group-describe` to inspect existing member protocols; consult the supported assignment protocols in [Kafka diagnostics](docs/kafka.md#consumer-group-diagnostics). |
 | `KAFKA_GROUP_NOT_FOUND` | Verify the existing group ID; inspection does not create a group. |
 | 0 messages consumed | Check topic/group access and offsets. New groups start at latest; `--from-beginning` does not reset committed offsets. |
 
@@ -661,6 +738,9 @@ npm run build
 npm run dev -- --help
 npm run dev -- profiles list
 npm run dev -- rest request --profile <profile-name> --path /some/path
+npm run dev -- kafka topic-describe \
+  --profile <profile-name> \
+  --topic <topic>
 ```
 
 `npm run dev -- ...` builds and runs the current local source. The globally installed `saf-cli-tester ...` runs the installed release even when your shell is inside the project directory. To distinguish the installed command from the local development version:
