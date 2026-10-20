@@ -162,6 +162,7 @@ Verify trusted OAuth discovery/token endpoints before supplying credentials; dis
 | `run` | Execute a YAML request template, including its polling configuration. |
 | `kafka connection-test` | Test authenticated Native Kafka metadata connectivity. |
 | `kafka consume` | Consume bounded Kafka messages. |
+| `kafka topic-describe` | Read-only topic metadata inspection. |
 | `kafka group-describe` | Inspect an existing consumer group. |
 | `help [command]` | Display help; command groups also expose this helper. |
 | `update-check` | Check the latest published GitHub Release. |
@@ -305,6 +306,27 @@ CLI values override supported template settings. A template with `poll` runs pol
 | `--include-payload` | Off | Print redacted message values and log bounded JSON locally. |
 | `--max-payload-bytes <n>` | 65536 | Persistent payload diagnostic limit, 1–1048576 bytes; does not limit console output. |
 | `-h, --help` | — | Display command help. |
+
+### kafka topic-describe
+
+```sh
+saf-cli-tester kafka topic-describe \
+  --profile <profile-name> \
+  --topic <topic>
+```
+
+Read-only topic metadata inspection retrieves partition count, leader broker, replica broker IDs and ISR broker IDs. Conceptually, Apache Kafka `AdminClient.describeTopics(...)` ≈ KafkaJS `admin.fetchTopicMetadata(...)`; their implementation semantics are not identical. This command never joins a group, changes offsets or consumes messages.
+
+| Flag | Default / requirement | Description |
+| --- | --- | --- |
+| `--profile <name>` | Required | Local TechUser profile with Kafka mTLS configured. |
+| `--topic <topic>` | Required | Kafka topic to inspect. |
+| `--client-id <uuid>` | Generated UUID | Explicit Kafka UUID client ID. |
+| `--export <format>` | Disabled | `csv`, `summary` or `both`; successful inspection adds no message CSV rows. |
+| `--output <path>` | Local logs directory | Exact file for a single format; directory for `both`. Requires `--export`. |
+| `-h, --help` | — | Display command help. |
+
+Safe topic metadata is included in JSONL and summary exports. CSV follows existing admin diagnostics: header only on success, diagnostic error rows on failure.
 
 ### kafka group-describe
 

@@ -8,15 +8,16 @@ import type { Redactor } from '../../logging/redactor.js';
 import { openLog } from '../../logging/jsonl.js';
 import { RunExports, exportFormat } from '../../logging/exports.js';
 import { durationMs } from '../../rest/poller.js';
-import { clientId, connectionTest, consume, createKafka, createConsumer, kafkaError, validateConsume, validateGroupId, describeGroup, groupDescriptionOutput, groupProtocolDiagnostic, consumerAssignors } from '../../kafka/client.js';
+import { describeTopic, topicDescriptionOutput, validateTopic, clientId, connectionTest, consume, createKafka, createConsumer, kafkaError, validateConsume, validateGroupId, describeGroup, groupDescriptionOutput, groupProtocolDiagnostic, consumerAssignors } from '../../kafka/client.js';
 import { KafkaStats, kafkaCsvFields, messageDiagnostic } from '../../kafka/diagnostics.js';
 
 export function kafkaCommands(program: Command, redactor: Redactor) {
   const kafka = program.command('kafka').description('Native SAF Kafka transport diagnostics (mTLS only)');
-  for (const name of ['connection-test', 'consume', 'group-describe']) {
+  for (const name of ['connection-test', 'consume', 'group-describe', 'topic-describe']) {
     const command = kafka.command(name).requiredOption('--profile <name>', 'TechUser profile')
       .option('--client-id <uuid>', 'Kafka UUID client ID (generated when omitted)')
       .option('--export <format>', 'csv, summary or both', exportFormat).option('--output <path>', 'Export file or directory');
+    if (name === 'topic-describe') command.description('Read-only topic metadata inspection.').requiredOption('--topic <topic>', 'Kafka topic to inspect');
     if (name === 'group-describe') command.description('Describe an existing Kafka consumer group and its active members.').requiredOption('--group-id <id>', 'Existing consumer group ID');
     if (name === 'consume') command.addHelpText('after', '\nIf joining an existing group fails because of a protocol mismatch, use kafka group-describe to inspect the group.');
     if (name === 'consume') command.requiredOption('--topic <topic>', 'SAF OUT topic').requiredOption('--group-id <id>', 'SAF consumer group ID')
@@ -28,18 +29,20 @@ export function kafkaCommands(program: Command, redactor: Redactor) {
       const id = clientId(options.clientId as string | undefined);
       const consumeOptions = { topic: String(options.topic), count: options.count as number | undefined,
         durationMs: options.duration === undefined ? undefined : durationMs(String(options.duration)), fromBeginning: options.fromBeginning === true };
-      if (name !== 'connection-test') {
+      if (name === 'consume' || name === 'group-describe') {
         validateGroupId(options.groupId as string | undefined);
       }
       if (name === 'consume') {
         validateConsume(consumeOptions);
         if (!Number.isSafeInteger(options.maxPayloadBytes) || Number(options.maxPayloadBytes) < 1 || Number(options.maxPayloadBytes) > 1048576) throw new Error('CONFIG_ERROR: Invalid maximum payload bytes');
       }
+      if (name === 'topic-describe') validateTopic(String(options.topic));
       const paths = configPaths(program.opts().configDir as string | undefined);
       const profile = await loadProfile(paths.profiles, String(options.profile), redactor);
       const runId = randomUUID(), startTime = new Date().toISOString();
       const metadata = { runId, profile: profile.name, environment: profile.environment, transport: 'kafka', clientId: id,
-        ...(name !== 'connection-test' ? { groupId: String(options.groupId) } : {}),
+        ...((name === 'consume' || name === 'group-describe') ? { groupId: String(options.groupId) } : {}),
+        ...(name === 'topic-describe' ? { topic: String(options.topic) } : {}),
         ...(name === 'consume' ? { topic: consumeOptions.topic, consumerGroupId: String(options.groupId) } : {}) };
       const exports = await RunExports.open(exportFormat(options.export), options.output as string | undefined, paths.logs, runId, redactor, kafkaCsvFields);
       let logger: Logger;
@@ -47,6 +50,7 @@ export function kafkaCommands(program: Command, redactor: Redactor) {
       const controller = new AbortController(); const stop = () => controller.abort();
       process.once('SIGINT', stop); process.once('SIGTERM', stop);
       const stats = new KafkaStats(); let failure: unknown;
+      let topicMetadata: Awaited<ReturnType<typeof describeTopic>> | undefined;
       try {
         logger.console(`Profile: ${profile.name}\nEnvironment: ${profile.environment}\nKafka broker: ${profile.kafka?.brokers.join(', ')}\nAuthentication: mTLS\nClient UUID: ${id}\nRun ID: ${runId}\nLog: ${paths.logs}/${runId}.jsonl`);
         await logger.record({ timestamp: startTime, ...metadata, operation: name, payloadLogging: options.includePayload ? 'bounded-json' : 'metadata-only', result: 'started' });
@@ -55,6 +59,10 @@ export function kafkaCommands(program: Command, redactor: Redactor) {
           await connectionTest(client.admin());
           await logger.record({ timestamp: new Date().toISOString(), ...metadata, result: 'success' });
           logger.console('TLS: OK\nKafka connection: OK\nBroker metadata: OK\n\nConnection test successful.');
+        } else if (name === 'topic-describe') {
+          topicMetadata = await describeTopic(client.admin(), String(options.topic));
+          logger.console(topicDescriptionOutput(topicMetadata));
+          await logger.record({ timestamp: new Date().toISOString(), ...metadata, operation: name, ...topicMetadata, result: 'success' });
         } else if (name === 'group-describe') {
           const group = await describeGroup(client.admin(), String(options.groupId));
           logger.console(groupDescriptionOutput(group));
@@ -77,7 +85,7 @@ export function kafkaCommands(program: Command, redactor: Redactor) {
       } finally {
         process.removeListener('SIGINT', stop); process.removeListener('SIGTERM', stop);
         try {
-          const summary = { ...stats.summary(), transport: 'kafka', operation: name, topic: options.topic, groupId: options.groupId,
+          const summary = { ...stats.summary(), ...topicMetadata, transport: 'kafka', operation: name, topic: options.topic, groupId: options.groupId,
             clientId: id, result: failure ? 'error' : controller.signal.aborted ? 'interrupted' : 'success' };
           await logger.record({ ...metadata, summary });
           await exports?.summary({ runId, profile: profile.name, environment: profile.environment, startTime, endTime: new Date().toISOString() }, summary);

@@ -48,6 +48,31 @@ export async function connectionTest(admin: AdminClient) {
   try { await admin.connect(); await admin.fetchTopicMetadata({ topics: [] }); }
   finally { await admin.disconnect(); }
 }
+export function validateTopic(topic: string) {
+  if (!/^[A-Za-z0-9._-]{1,249}$/.test(topic) || ['.', '..'].includes(topic)) throw new Error('CONFIG_ERROR: Invalid Kafka topic');
+}
+export async function describeTopic(admin: AdminClient, topic: string) {
+  validateTopic(topic);
+  try {
+    await admin.connect();
+    const metadata = await admin.fetchTopicMetadata({ topics: [topic] });
+    const description = metadata.topics.find(item => item.name === topic);
+    if (!description) throw new Error('KAFKA_UNKNOWN_TOPIC: Requested topic does not exist');
+    // Retain only public metadata fields, never messages or opaque broker data.
+    return { topic: description.name, partitionCount: description.partitions.length,
+      partitions: description.partitions.map(partition => ({ partitionId: partition.partitionId,
+        partitionErrorCode: partition.partitionErrorCode, leader: partition.leader,
+        replicas: [...partition.replicas], isr: [...partition.isr] })) };
+  } finally { await admin.disconnect(); }
+}
+export function topicDescriptionOutput(topic: Awaited<ReturnType<typeof describeTopic>>) {
+  return [`Topic: ${topic.topic}`, `Partitions: ${topic.partitionCount}`,
+    ...topic.partitions.map(partition => [`\nPartition ${partition.partitionId}`,
+      `  Leader: ${partition.leader >= 0 ? partition.leader : 'unavailable'}`,
+      `  Replicas: ${partition.replicas.join(', ') || '(none)'}`,
+      `  ISR: ${partition.isr.join(', ') || '(none)'}`,
+      ...(partition.partitionErrorCode ? [`  Partition error code: ${partition.partitionErrorCode}`] : [])].join('\n'))].join('\n');
+}
 export const consumerAssignors = [...new Set(configuredAssignors.map(assignor => assignor.label))];
 export function createConsumer(kafka: Pick<Kafka, 'consumer'>, groupId: string) {
   return kafka.consumer({ groupId, partitionAssigners: configuredAssignors.map(assignor => assignor.factory) });
@@ -86,7 +111,7 @@ export function groupDescriptionOutput(group: Awaited<ReturnType<typeof describe
 export type ConsumerClient = Pick<ReturnType<Kafka['consumer']>, 'connect' | 'subscribe' | 'run' | 'stop' | 'disconnect' | 'on' | 'events'>;
 export type ConsumeOptions = { topic: string; count?: number; durationMs?: number; fromBeginning?: boolean; signal?: AbortSignal };
 export function validateConsume(options: ConsumeOptions) {
-  if (!/^[A-Za-z0-9._-]{1,249}$/.test(options.topic) || ['.', '..'].includes(options.topic)) throw new Error('CONFIG_ERROR: Invalid Kafka topic');
+  validateTopic(options.topic);
   if (options.count !== undefined && (!Number.isSafeInteger(options.count) || options.count <= 0)) throw new Error('CONFIG_ERROR: Count must be a positive integer');
   if (options.durationMs !== undefined && (!Number.isFinite(options.durationMs) || options.durationMs <= 0 || options.durationMs > 2147483647)) throw new Error('CONFIG_ERROR: Duration must be positive and at most 24.8 days');
   if (options.count === undefined && options.durationMs === undefined) throw new Error('CONFIG_ERROR: Consume requires --count or --duration');

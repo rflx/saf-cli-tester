@@ -65,3 +65,19 @@ SAF CLI Tester supports **`range`** (RangeAssignor) and **`roundrobin`** (RoundR
 KafkaJS 2.2.4 exports only `PartitionAssigners.roundRobin`, whose wire name is `RoundRobinAssigner`. The shared consumer creation path configures a custom range assignor through the public `partitionAssigners` API and `AssignerProtocol` codecs, a `roundrobin` adapter around the built-in assignor, and the original `RoundRobinAssigner` for compatibility with existing KafkaJS groups. Range assignment distributes contiguous partition ranges per topic among subscribed members. Configuration offers these protocols in that order; negotiation still requires a protocol supported by every member. Mismatch diagnostics derive assignor labels and wire names from this configuration, and error logs list the configured assignor labels. Group IDs and committed-offset behavior are unchanged.
 
 The SAF naming convention is informational and is not enforced or warned on by the CLI. `CG-00001-IDP5061788` is allowed unchanged. A format deviation does not diagnose group protocol incompatibility.
+
+## Topic metadata inspection
+
+```sh
+saf-cli-tester kafka topic-describe \
+  --profile <profile-name> \
+  --topic <topic>
+```
+
+This read-only command uses the shared Kafka/mTLS profile, UUID client ID, timeouts and redaction infrastructure. It calls KafkaJS 2.2.4 `admin.fetchTopicMetadata({ topics: [topic] })`. Conceptually this corresponds to Apache Kafka `AdminClient.describeTopics(...)`, without claiming identical implementation semantics. KafkaJS admin disables automatic topic creation. The command does not create or join a consumer group, change offsets, consume or produce messages, or modify topics/configuration.
+
+Output includes the topic name, partition count, and each partition's ID, leader broker, replica broker IDs and in-sync replica (ISR) broker IDs. A negative leader ID displays as unavailable; nonzero partition error codes are displayed explicitly. No keys, headers, payloads or credentials are accessed.
+
+Missing/invalid topic arguments fail locally. An absent topic or broker unknown-topic error yields `KAFKA_UNKNOWN_TOPIC`; missing topic permissions yield `KAFKA_TOPIC_AUTHORIZATION_ERROR`. Existing TLS, authentication, connection and timeout classifications apply. A successful metadata request does not establish permission to consume messages.
+
+Optional flags are `--client-id <uuid>`, `--export csv|summary|both`, `--output <path>` and `-h, --help`. JSONL records the operation and safe metadata; summary exports also include partition metadata alongside existing Kafka diagnostic totals (zero consumed messages). CSV follows existing admin behavior: header only on success, diagnostic error rows on failure, with no invented per-message rows. Export path rules are unchanged.
