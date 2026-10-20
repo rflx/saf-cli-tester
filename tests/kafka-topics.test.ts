@@ -82,7 +82,7 @@ test('CLI topic registration, required arguments and forbidden consumer flags', 
   const kafka = program().commands[0]!;
   assert.match(kafka.helpInformation(), /topic-describe/);
   const command = kafka.commands.find(c => c.name() === 'topic-describe')!;
-  for (const flag of ['--profile', '--topic', '--client-id', '--export', '--output', '--help']) assert.ok(command.helpInformation().includes(flag));
+  for (const flag of ['--profile', '--topic', '--client-id', '--export', '--output', '--interval', '--count', '--duration', '--changes-only', '--help']) assert.ok(command.helpInformation().includes(flag));
   for (const flag of ['--group-id', '--from-beginning', '--include-payload']) assert.ok(!command.helpInformation().includes(flag));
   for (const args of [[], ['--topic', 'topic'], ['--profile', 'test']]) await assert.rejects(program().parseAsync(['kafka', 'topic-describe', ...args], { from: 'user' }), /required option/);
   await assert.rejects(program().parseAsync(['kafka', 'topic-describe', '--profile', 'test', '--topic', 'topic', '--client-id', 'bad'], { from: 'user' }), /UUID/);
@@ -113,10 +113,26 @@ test('CLI topic uses admin only, reuses UUID and exports redacted metadata witho
       if (format === 'summary') { const summary = JSON.parse(await readFile(join(root, format), 'utf8')); assert.deepEqual(summary.partitions, partitions); assert.equal(summary.clientId, id); assert.equal(summary.messagesConsumed, 0); }
       if (format === 'both') assert.equal((await readdir(join(root, format))).length, 2);
     }
+    for (const failing of [false, true]) {
+      fail = failing;
+      const p = new Command().option('--config-dir <path>', '', root); kafkaCommands(p, new Redactor());
+      const path = join(root, `poll-${failing}.json`);
+      const before = output.length;
+      await p.parseAsync(['kafka', 'topic-describe', '--profile', 'test', '--topic', 'topic', '--interval', '0.001', '--count', '3', '--changes-only', '--export', 'summary', '--output', path], { from: 'user' });
+      const summary = JSON.parse(await readFile(path, 'utf8'));
+      assert.equal(summary.samplesAttempted, 3); assert.equal(summary.successfulSamples, failing ? 0 : 3); assert.equal(summary.failedSamples, failing ? 3 : 0);
+      if (!failing) {
+        assert.deepEqual(summary.latestSuccessfulMetadata.partitions, partitions);
+        assert.equal(output.slice(before).filter(line => line.includes('Sample ')).length, 1);
+      } else assert.equal(output.slice(before).filter(line => line.includes('KAFKA_TLS_ERROR')).length, 3);
+      const logs = await Promise.all((await readdir(join(root, 'logs'))).map(file => readFile(join(root, 'logs', file), 'utf8')));
+      const run = logs.map(log => log.trim().split('\n').map(line => JSON.parse(line))).find(records => records.some(r => r.summary?.samplesAttempted === 3 && r.summary.failedSamples === (failing ? 3 : 0)))!;
+      assert.equal(run.filter(r => r.sample !== undefined).length, 3);
+    }
     fail = true;
     const p = new Command().option('--config-dir <path>', '', root); kafkaCommands(p, new Redactor());
     await p.parseAsync(['kafka', 'topic-describe', '--profile', 'test', '--topic', 'topic'], { from: 'user' });
-    assert.equal(process.exitCode, 1); assert.equal(calls, 4);
+    assert.equal(process.exitCode, 1); assert.equal(calls, 10);
     assert.match(output.join('\n'), /Client UUID: 11111111-2222-3333-4444-555555555555/);
     assert.ok(!output.join('\n').includes('profile-secret'));
     for (const file of await readdir(join(root, 'logs'))) {

@@ -6,7 +6,7 @@ export function durationMs(value: string): number {
   if (!Number.isFinite(result) || result <= 0) throw new Error('CONFIG_ERROR: Duration must be positive');
   return result;
 }
-export async function poll(task: (sequence: number) => Promise<void>, options: { intervalMs: number; count?: number; durationMs?: number; signal?: AbortSignal }, clock = () => performance.now(), wait = (ms: number) => sleep(ms, undefined, { signal: options.signal })) {
+export async function poll(task: (sequence: number) => Promise<void>, options: { intervalMs: number; count?: number; durationMs?: number; signal?: AbortSignal }, clock = () => performance.now(), wait: (ms: number) => Promise<void> = (ms: number) => sleep(ms, undefined, { signal: options.signal })) {
   if (!Number.isFinite(options.intervalMs) || options.intervalMs <= 0 || (options.count !== undefined && (!Number.isInteger(options.count) || options.count <= 0)) || (!options.count && !options.durationMs)) throw new Error('CONFIG_ERROR: Polling requires positive interval and count or duration');
   if (options.count && options.durationMs) throw new Error('CONFIG_ERROR: Choose count or duration');
   const start = clock(); let sequence = 0;

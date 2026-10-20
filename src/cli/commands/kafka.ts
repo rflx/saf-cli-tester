@@ -7,6 +7,7 @@ import { Logger } from '../../logging/logger.js';
 import type { Redactor } from '../../logging/redactor.js';
 import { openLog } from '../../logging/jsonl.js';
 import { RunExports, exportFormat } from '../../logging/exports.js';
+import { pollTopic, validateTopicPolling } from '../../kafka/topic-poller.js';
 import { durationMs } from '../../rest/poller.js';
 import { describeTopic, topicDescriptionOutput, validateTopic, clientId, connectionTest, consume, createKafka, createConsumer, kafkaError, validateConsume, validateGroupId, describeGroup, groupDescriptionOutput, groupProtocolDiagnostic, consumerAssignors } from '../../kafka/client.js';
 import { KafkaStats, kafkaCsvFields, messageDiagnostic } from '../../kafka/diagnostics.js';
@@ -17,7 +18,12 @@ export function kafkaCommands(program: Command, redactor: Redactor) {
     const command = kafka.command(name).requiredOption('--profile <name>', 'TechUser profile')
       .option('--client-id <uuid>', 'Kafka UUID client ID (generated when omitted)')
       .option('--export <format>', 'csv, summary or both', exportFormat).option('--output <path>', 'Export file or directory');
-    if (name === 'topic-describe') command.description('Read-only topic metadata inspection.').requiredOption('--topic <topic>', 'Kafka topic to inspect');
+    if (name === 'topic-describe') command.description('Read-only topic metadata inspection.').requiredOption('--topic <topic>', 'Kafka topic to inspect')
+      .option('--interval <seconds>', 'Positive seconds between starts (max 2147483.647); required for polling', Number)
+      .option('--count <n>', 'Bounded polling: positive safe integer sample count; excludes duration', Number)
+      .option('--duration <duration>', 'Bounded polling: positive ms/s/m/h duration, at most 24.8 days; excludes count')
+      .option('--changes-only', 'Polling only: print first success and changed metadata; always print failures')
+      .addHelpText('after', '\nWithout polling options, inspect once. Polling requires explicit --interval and exactly one of --count or --duration. Sequential fresh admin operations; slow samples extend the interval.');
     if (name === 'group-describe') command.description('Describe an existing Kafka consumer group and its active members.').requiredOption('--group-id <id>', 'Existing consumer group ID');
     if (name === 'consume') command.addHelpText('after', '\nIf joining an existing group fails because of a protocol mismatch, use kafka group-describe to inspect the group.');
     if (name === 'consume') command.requiredOption('--topic <topic>', 'SAF OUT topic').requiredOption('--group-id <id>', 'SAF consumer group ID')
@@ -36,6 +42,9 @@ export function kafkaCommands(program: Command, redactor: Redactor) {
         validateConsume(consumeOptions);
         if (!Number.isSafeInteger(options.maxPayloadBytes) || Number(options.maxPayloadBytes) < 1 || Number(options.maxPayloadBytes) > 1048576) throw new Error('CONFIG_ERROR: Invalid maximum payload bytes');
       }
+      const topicPollOptions = { intervalMs: options.interval === undefined ? undefined : Number(options.interval) * 1000,
+        count: options.count as number | undefined, durationMs: consumeOptions.durationMs, changesOnly: options.changesOnly === true };
+      const topicPolling = name === 'topic-describe' && validateTopicPolling(topicPollOptions);
       if (name === 'topic-describe') validateTopic(String(options.topic));
       const paths = configPaths(program.opts().configDir as string | undefined);
       const profile = await loadProfile(paths.profiles, String(options.profile), redactor);
@@ -50,6 +59,7 @@ export function kafkaCommands(program: Command, redactor: Redactor) {
       const controller = new AbortController(); const stop = () => controller.abort();
       process.once('SIGINT', stop); process.once('SIGTERM', stop);
       const stats = new KafkaStats(); let failure: unknown;
+      let pollingSummary: Awaited<ReturnType<typeof pollTopic>> | undefined;
       let topicMetadata: Awaited<ReturnType<typeof describeTopic>> | undefined;
       try {
         logger.console(`Profile: ${profile.name}\nEnvironment: ${profile.environment}\nKafka broker: ${profile.kafka?.brokers.join(', ')}\nAuthentication: mTLS\nClient UUID: ${id}\nRun ID: ${runId}\nLog: ${paths.logs}/${runId}.jsonl`);
@@ -60,9 +70,22 @@ export function kafkaCommands(program: Command, redactor: Redactor) {
           await logger.record({ timestamp: new Date().toISOString(), ...metadata, result: 'success' });
           logger.console('TLS: OK\nKafka connection: OK\nBroker metadata: OK\n\nConnection test successful.');
         } else if (name === 'topic-describe') {
-          topicMetadata = await describeTopic(client.admin(), String(options.topic));
-          logger.console(topicDescriptionOutput(topicMetadata));
-          await logger.record({ timestamp: new Date().toISOString(), ...metadata, operation: name, ...topicMetadata, result: 'success' });
+          if (topicPolling) {
+            pollingSummary = await pollTopic(() => client.admin(), String(options.topic), { ...topicPollOptions, signal: controller.signal }, async sample => {
+              if (sample.metadata) {
+                await logger.record({ timestamp: sample.timestamp, ...metadata, operation: name, sample: sample.sequence, ...sample.metadata, result: 'success' });
+                if (sample.print) logger.console(`\nSample ${sample.sequence}\nTime: ${sample.timestamp}\n${topicDescriptionOutput(sample.metadata)}`);
+              } else {
+                failure = sample.error; stats.errors++;
+                const record = { timestamp: sample.timestamp, ...metadata, operation: name, sample: sample.sequence, result: 'error', errorType: kafkaError(sample.error), error: sample.error instanceof Error ? sample.error.message : 'Kafka operation failed' };
+                await logger.record(record); await exports?.record(record); logger.error(record); process.exitCode = 1;
+              }
+            });
+          } else {
+            topicMetadata = await describeTopic(client.admin(), String(options.topic));
+            logger.console(topicDescriptionOutput(topicMetadata));
+            await logger.record({ timestamp: new Date().toISOString(), ...metadata, operation: name, ...topicMetadata, result: 'success' });
+          }
         } else if (name === 'group-describe') {
           const group = await describeGroup(client.admin(), String(options.groupId));
           logger.console(groupDescriptionOutput(group));
@@ -85,10 +108,11 @@ export function kafkaCommands(program: Command, redactor: Redactor) {
       } finally {
         process.removeListener('SIGINT', stop); process.removeListener('SIGTERM', stop);
         try {
-          const summary = { ...stats.summary(), ...topicMetadata, transport: 'kafka', operation: name, topic: options.topic, groupId: options.groupId,
+          const summary = { ...stats.summary(), ...topicMetadata, ...pollingSummary, transport: 'kafka', operation: name, topic: options.topic, groupId: options.groupId,
             clientId: id, result: failure ? 'error' : controller.signal.aborted ? 'interrupted' : 'success' };
           await logger.record({ ...metadata, summary });
           await exports?.summary({ runId, profile: profile.name, environment: profile.environment, startTime, endTime: new Date().toISOString() }, summary);
+          if (pollingSummary) logger.console(`Topic: ${options.topic}\nSamples attempted: ${pollingSummary.samplesAttempted}\nSuccessful samples: ${pollingSummary.successfulSamples}\nFailed samples: ${pollingSummary.failedSamples}\nMetadata changes: ${pollingSummary.metadataChangeCount}\nDuration: ${pollingSummary.durationSeconds.toFixed(1)} s\nResult: ${summary.result}`);
           if (name === 'consume') logger.console(`Run completed\nProfile: ${profile.name}\nEnvironment: ${profile.environment}\nTransport: Kafka\nTopic: ${options.topic}\nMessages consumed: ${summary.messagesConsumed}\nBytes consumed: ${summary.bytesConsumed}\nPartitions seen: ${summary.partitionsSeen}\nErrors: ${summary.errors}\nDuration: ${summary.durationSeconds.toFixed(1)} s\nMessages/sec: ${summary.messagesPerSecond.toFixed(2)}`);
           if (controller.signal.aborted && !failure) process.exitCode = 130;
         } finally { try { await logger.close(); } finally { await exports?.close(); } }

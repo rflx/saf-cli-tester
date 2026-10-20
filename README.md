@@ -315,6 +315,54 @@ saf-cli-tester kafka topic-describe \
   --topic <topic>
 ```
 
+Bounded polling (choose count or duration):
+
+```sh
+saf-cli-tester kafka topic-describe \
+  --profile <profile-name> \
+  --topic <topic> \
+  --interval 10 \
+  --count 6
+
+saf-cli-tester kafka topic-describe \
+  --profile <profile-name> \
+  --topic <topic> \
+  --interval 10 \
+  --duration 1m
+
+saf-cli-tester kafka topic-describe \
+  --profile <profile-name> \
+  --topic <topic> \
+  --interval 10 \
+  --duration 5m \
+  --changes-only
+```
+
+Without polling options the command runs once. Polling requires an explicit positive
+`--interval` in seconds and exactly one of `--count` (positive safe integer) or
+`--duration` (positive `ms`, `s`, `m`, or `h`, at most 24.8 days). Interval is capped
+at 2147483.647 seconds. Interval alone and changes-only without polling are rejected.
+The interval is between sample starts: execution is sequential with no overlap,
+slow samples extend the effective interval, and there are no catch-up bursts.
+Each sample uses a fresh admin connect/fetch/disconnect operation. Duration prevents
+new samples after the deadline; an in-flight operation finishes and disconnects.
+Ctrl+C or SIGTERM stops further samples and writes the final summary (exit 130 on
+interruption without errors; any failed attempt keeps exit 1).
+
+Every poll is read-only: no consumer group is created or joined, no offsets are
+changed, and no messages are consumed. Samples can reveal leader changes, replica
+set changes, ISR changes, and partition count changes over time.
+`--changes-only` prints the first success and subsequent changed metadata, while
+always printing failures. Comparison ignores timestamps and run IDs, sorts partitions
+by ID and ISR membership, and includes partition error codes. Replica order is retained
+because it identifies the preferred replica. Failures do not reset the last success.
+All attempts remain in JSONL with timestamps, sample numbers, safe metadata or
+classified/redacted errors. Summary JSON includes attempted/successful/failed counts,
+duration, metadata change count (excluding the initial sample), topic and the latest
+successful snapshot. CSV stays header-only for successes and adds diagnostic rows
+for failures. Polling console output labels each visible sample and prints final totals.
+
+
 Read-only topic metadata inspection retrieves partition count, leader broker, replica broker IDs and ISR broker IDs. Conceptually, Apache Kafka `AdminClient.describeTopics(...)` ≈ KafkaJS `admin.fetchTopicMetadata(...)`; their implementation semantics are not identical. This command never joins a group, changes offsets or consumes messages.
 
 | Flag | Default / requirement | Description |
@@ -322,6 +370,10 @@ Read-only topic metadata inspection retrieves partition count, leader broker, re
 | `--profile <name>` | Required | Local TechUser profile with Kafka mTLS configured. |
 | `--topic <topic>` | Required | Kafka topic to inspect. |
 | `--client-id <uuid>` | Generated UUID | Explicit Kafka UUID client ID. |
+| `--interval <seconds>` | Required for polling | Positive interval between sample starts; at most 2147483.647 seconds. |
+| `--count <n>` | Optional | Enable bounded polling for a positive safe integer number of attempts; excludes duration. |
+| `--duration <duration>` | Optional | Enable bounded polling for positive ms/s/m/h duration, at most 24.8 days; excludes count. |
+| `--changes-only` | Disabled | Polling only: suppress unchanged successful console samples. |
 | `--export <format>` | Disabled | `csv`, `summary` or `both`; successful inspection adds no message CSV rows. |
 | `--output <path>` | Local logs directory | Exact file for a single format; directory for `both`. Requires `--export`. |
 | `-h, --help` | — | Display command help. |
