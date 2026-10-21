@@ -763,3 +763,7 @@ Planned, **not implemented**:
 - Reusable scenarios, profile comparisons and advanced reporting.
 
 See [architecture and future milestones](docs/architecture.md). Proposed future commands there are not part of the current CLI reference.
+
+## License
+
+This project is licensed under the ISC License. See [LICENSE](LICENSE).
