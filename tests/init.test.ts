@@ -136,7 +136,7 @@ test('CLI discovery and initialization work outside checkout; help exposes all n
 test('package dry run contains bundled references and excludes development and local artifacts', async () => {
   const { stdout } = await exec('npm', ['pack', '--dry-run', '--ignore-scripts', '--json'], { cwd: packageRoot });
   const files = (JSON.parse(stdout) as { files: { path: string }[] }[])[0]!.files.map(file => file.path);
-  for (const path of ['examples/profile.full.example.yaml', 'examples/profile.oauth2.example.yaml', 'examples/profile.mtls.example.yaml', 'examples/request.example.yaml', 'templates/general-api/saf-receivers.yaml', 'templates/general-api/saf-insurers.yaml', 'README.md', 'package.json']) assert.ok(files.includes(path), path);
-  assert.ok(files.every(path => /^(dist\/|templates\/|examples\/|README.md$|package.json$)/.test(path)), files.join('\n'));
+  for (const path of ['examples/profile.full.example.yaml', 'examples/profile.oauth2.example.yaml', 'examples/profile.mtls.example.yaml', 'examples/request.example.yaml', 'templates/general-api/saf-receivers.yaml', 'templates/general-api/saf-insurers.yaml', 'LICENSE', 'README.md', 'package.json']) assert.ok(files.includes(path), path);
+  assert.ok(files.every(path => /^(dist\/|templates\/|examples\/|LICENSE$|README.md$|package.json$)/.test(path)), files.join('\n'));
   assert.ok(files.every(path => !/\.(tgz|p12|pfx)$/.test(path)));
 });
