@@ -49,3 +49,12 @@ Names start with a letter or number and contain letters, numbers, `_` or `-`. Te
 4. Run `npm pack --dry-run` and verify package contents.
 
 Initialization tests use temporary config roots and never contact services. Config initialization serializes `configSchema.parse({})`, so schema defaults remain the source of truth. Keep the package version unchanged during feature implementation; release preparation is a separate step.
+
+## Security documentation maintenance
+
+Security documentation exists in two layers:
+
+- `.github/SECURITY.md` is the concise GitHub Security Policy.
+- `docs/security.md` is the detailed CLI security documentation and canonical user guidance.
+
+When modifying security-related behavior or documentation, maintainers and Codex must review both files and update both where the change affects their respective scope.

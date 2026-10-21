@@ -1140,6 +1140,8 @@ After implementation:
 6. Explain how to run the CLI locally.
 7. Do not commit or push unless explicitly requested.
 
+When modifying security-related behavior or documentation, review both `.github/SECURITY.md` and `docs/security.md` and update each where the change affects its scope.
+
 Security takes precedence over convenience.
 # Native Kafka transport
 
